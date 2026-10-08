@@ -4,7 +4,7 @@ Secondary responsibility: Artist.
 
 ## What is here
 
-InputBuffer consumes one-shot actions. No SDL polling, menus, HUD or audio exist.
+InputBuffer supports a held movement axis and one-shot actions. Use a separate buffer per player. No SDL polling, menus, HUD or audio exist.
 
 - Public code: `engine/include/engine/interaction.hpp`
 - Implementation: `engine/src/interaction.cpp`
@@ -14,13 +14,13 @@ InputBuffer consumes one-shot actions. No SDL polling, menus, HUD or audio exist
 
 ## Why this subsystem exists
 
-Your reusable subsystem should expose a small interface other teammates can test independently. Read [architecture and contracts](../ARCHITECTURE.md) before expanding it; Flappy rules stay in `games/flappy/`.
+Your reusable subsystem should expose a small interface other teammates can test independently. Read [architecture and contracts](../ARCHITECTURE.md) before expanding it; Elemental co-op rules stay in `games/elemental_coop/`.
 
 ## First development tasks
 
-1. **SDL action mapping** — Centralize SDL event polling; map keys to actions, handle quit/focus and test that one press is consumed once. Proposed effort: 5 hours.
+1. **SDL action mapping** — Centralize SDL event polling; map two independent local control sets or one local network slot, clear held movement on focus loss, and test isolated jump actions. Proposed effort: 5 hours.
 
-2. **Menus and HUD** — Implement title/pause/game-over UI and score display from game state; verify input capture with ImGui. Proposed effort: 6 hours.
+2. **Menus and HUD** — Implement title, local co-op/host/join, character assignment, shared failure/restart and level-complete UI; show both player states and verify ImGui input capture. Proposed effort: 6 hours.
 
 3. **Audio and settings** — Load approved sound assets through shared infrastructure; add volume validation and clean shutdown with the audio backend. Proposed effort: 6 hours.
 

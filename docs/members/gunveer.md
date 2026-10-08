@@ -14,11 +14,11 @@ LevelDocument validation is a neutral data model. It does not load Tiled or JSON
 
 ## Why this subsystem exists
 
-Your reusable subsystem should expose a small interface other teammates can test independently. Read [architecture and contracts](../ARCHITECTURE.md) before expanding it; Flappy rules stay in `games/flappy/`.
+Your reusable subsystem should expose a small interface other teammates can test independently. Read [architecture and contracts](../ARCHITECTURE.md) before expanding it; Elemental co-op rules stay in `games/elemental_coop/`.
 
 ## First development tasks
 
-1. **Level schema and importer** — Agree schema/version with Arvin and Blake; implement selected Tiled JSON subset and reject unsupported/invalid data. Proposed effort: 6 hours.
+1. **Level schema and importer** — Agree schema/version for two spawns, solid platforms, elemental hazards, linked plates/doors and two exits; import a selected Tiled JSON subset and reject broken object links. Proposed effort: 6 hours.
 
 2. **Developer inspection panel** — Integrate approved Dear ImGui backend with Aryaman; show entities, timing and cache counts without owning those services. Proposed effort: 6 hours.
 

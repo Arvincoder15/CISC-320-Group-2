@@ -30,7 +30,7 @@ In Windows PowerShell with the Visual Studio generator:
 .\build\Debug\engine_demo.exe
 ```
 
-Success means ten passing CTest suites and a demo summary with 120 ticks, one entity, one rendered command and one cached resource. There is no window yet. Each owner's handoff shows how to run only their suite.
+Success means ten passing CTest suites and a demo summary with 120 ticks, two players, two rendered commands and two cached resources. There is no window yet. Each owner's handoff shows how to run only their suite.
 
 For a separate optimized build:
 
@@ -44,7 +44,7 @@ CMake ignores `CMAKE_BUILD_TYPE` for multi-configuration generators such as Visu
 
 ## Adding a source or test
 
-Add new `.cpp` files to the owning target in `CMakeLists.txt` with `target_sources`. Public headers belong under the owning include directory. Keep engine targets independent of the Flappy game. Register additional test executables with `add_test`; extend the corresponding owner suite for related small cases. Do not use C `assert()` as the test runner because Release builds can disable it.
+Add new `.cpp` files to the owning target in `CMakeLists.txt` with `target_sources`. Public headers belong under the owning include directory. Keep engine targets independent of the cooperative game. Register additional test executables with `add_test`; extend the corresponding owner suite for related small cases. Do not use C `assert()` as the test runner because Release builds can disable it.
 
 `BUILD_TESTING=OFF` builds the demo without tests. The small runner in `tests/test_support.hpp` is temporary. Once the team chooses GoogleTest or Catch2, Arvin can migrate it while retaining the behavioral cases.
 

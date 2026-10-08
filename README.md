@@ -1,6 +1,6 @@
 # CISC 320 Group 2 — Multiplayer 2D Game Engine
 
-Shared C++ starter for all nine developers. The reusable engine lives in `engine/`; the Flappy Bird-inspired demonstration lives in `games/flappy/`.
+Shared C++ starter for all nine developers. The demonstration is a Fireboy-and-Watergirl-inspired cooperative puzzle platformer with one fire character and one water character. The reusable engine lives in `engine/`; the game lives in `games/elemental_coop/`.
 
 **Current state:** a working headless scaffold, not a graphical game or a multiplayer engine yet. SDL3, JSON, Dear ImGui, Tiled import, sockets, menus, audio, and full ECS storage remain owner tasks. Recording/loopback implementations are explicitly test doubles.
 
@@ -26,12 +26,20 @@ Run `./build/engine_demo` on macOS/Linux, or `.\build\Debug\engine_demo.exe` wit
 
 C++20 is a provisional bootstrap choice. The supplied team notes record C++26; the team must confirm its final standard and compiler matrix. The temporary CTest checks do not select GoogleTest or Catch2.
 
+## Cooperative game scope
+
+The working module name is `elemental_coop`; the final game title is undecided. Two human players solve a room together using independent movement/jump controls, different elemental hazards, pressure plates/doors and matching exits. Local co-op is the first integration milestone; networked two-player play remains Henry's assigned deliverable.
+
+Implemented starter behavior: two characters, walking, grounded jumps on a temporary flat floor, elemental hazard rules, shared loss/restart and both-player exit completion. The demo uses scripted input and manually supplied contacts. Platforms, collision-trigger adapters, switches/doors, live keyboard controls and sockets remain work to build.
+
+See [game design and proposed controls](docs/GAME_DESIGN.md) and [game module guide](games/elemental_coop/README.md).
+
 ## Layout
 
 ```text
 engine/include/engine/  Public reusable subsystem contracts
 engine/src/            Eight engine subsystem implementations
-games/flappy/         Blake's game-specific implementation (ninth ownership area)
+games/elemental_coop/  Blake's game-specific implementation (ninth ownership area)
 apps/                  Executable composition and headless demo
 tests/                Nine owner suites plus integration tests
 assets/               Example configuration and future licensed assets

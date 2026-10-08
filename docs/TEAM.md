@@ -15,3 +15,5 @@ Primary/secondary roles are from the supplied team notes. Starter interfaces and
 | Arvin | Engine Infrastructure | Software Developer/Architect | [Start here](members/arvin.md) |
 
 Each owner implements and tests their subsystem. Arvin provides the test infrastructure; he does not own everyone’s tests. Sydney and Henry maintain repository settings.
+
+Current game: a cooperative elemental puzzle platformer. Each handoff and the Jira draft use that scope; see [game design](GAME_DESIGN.md) for implemented versus proposed behavior.

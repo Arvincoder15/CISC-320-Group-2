@@ -4,7 +4,7 @@ Secondary responsibility: Team Manager.
 
 ## What is here
 
-VerticalSteering is a generic threshold decision; an AI opponent remains proposed.
+PatrolController is a reusable left/right state machine for optional moving hazards or NPCs. Both main characters are human-controlled; a companion AI is not required.
 
 - Public code: `engine/include/engine/ai.hpp`
 - Implementation: `engine/src/ai.cpp`
@@ -14,13 +14,13 @@ VerticalSteering is a generic threshold decision; an AI opponent remains propose
 
 ## Why this subsystem exists
 
-Your reusable subsystem should expose a small interface other teammates can test independently. Read [architecture and contracts](../ARCHITECTURE.md) before expanding it; Flappy rules stay in `games/flappy/`.
+Your reusable subsystem should expose a small interface other teammates can test independently. Read [architecture and contracts](../ARCHITECTURE.md) before expanding it; Elemental co-op rules stay in `games/elemental_coop/`.
 
 ## First development tasks
 
-1. **Agent decision interface** — Agree observation/action types with Blake; keep engine decisions independent of bird rules and test boundary conditions. Proposed effort: 4 hours.
+1. **Agent decision interface** — Agree reusable patrol/state-machine interfaces with Blake; test direction changes at bounds and keep puzzle rules in the game layer. Proposed effort: 4 hours.
 
-2. **Optional demonstration opponent** — If scope is approved, map obstacle observations to actions with cooldown; demonstrate an agent using the same gameplay input path. Proposed effort: 6 hours.
+2. **Optional patrol hazard** — If approved, use the patrol controller for a moving hazard or NPC in one puzzle room; expose bounds in level data and test predictable transitions. Both player roles remain human-controlled. Proposed effort: 6 hours.
 
 3. **AI evaluation and sprint coordination** — Test decisions for invalid observations and repeatable scenarios; record agreed sprint scope and owners in Jira. Proposed effort: 4 hours.
 

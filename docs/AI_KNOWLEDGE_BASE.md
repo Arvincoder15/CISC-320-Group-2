@@ -4,9 +4,9 @@ Copy this document and links to the live contracts into Confluence. Keep it sync
 
 ## Facts to give an assistant
 
-We are CISC 320 Group 2, building a reusable C++ 2D multiplayer engine and a separate Flappy-inspired demo. Read README, docs/TEAM.md, docs/ARCHITECTURE.md, docs/DECISIONS.md, the owning member handoff and existing code before editing. Do not assume pending decisions are final.
+We are CISC 320 Group 2, building a reusable C++ 2D multiplayer engine and a separate cooperative elemental puzzle-platformer demo. Read README, docs/TEAM.md, docs/ARCHITECTURE.md, docs/DECISIONS.md, the owning member handoff and existing code before editing. Do not assume pending decisions are final.
 
-Starter baseline: C++20, CMake >=3.20, no external runtime dependencies, CTest with a temporary minimal runner. The notes proposed C++26 and intended SDL3/JSON/ImGui/Tiled; neither full C++26 compatibility nor those integrations are established here. Rendering and networking implementations are test doubles. There is no real multiplayer or graphical application yet.
+Starter baseline: C++20, CMake >=3.20, no external runtime dependencies, CTest with a temporary minimal runner. The notes proposed C++26 and intended SDL3/JSON/ImGui/Tiled; neither full C++26 compatibility nor those integrations are established here. Rendering and networking implementations are test doubles. Two local player action streams exist, but there is no real network transport or graphical application yet. Do not describe the headless demo as playable multiplayer.
 
 ## Reusable prompt
 
@@ -15,3 +15,5 @@ Starter baseline: C++20, CMake >=3.20, no external runtime dependencies, CTest w
 ## Review responsibilities
 
 The student owning the change must understand and verify generated code, check compatibility and licensing, and follow course policy for AI use/attribution. Never fabricate Jira activity, time spent, meeting attendance, test outcomes or individual contributions. Keep secrets and credentials out of prompts/repository files. This shared bootstrap is generated assistance; meaningful individual implementation remains each owner's work.
+
+Game-specific contracts: `games/elemental_coop`, two human roles (fire/water), independent movement/jump, shared failure/restart and matching exits. Puzzle plates/doors, tiled collision, SDL input and network session rules are upcoming work. Keep elemental rules out of engine code.

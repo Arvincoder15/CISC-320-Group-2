@@ -10,7 +10,7 @@
 
 ## Conventions
 
-Use `PascalCase` types, `snake_case` functions/variables and `engine`/`flappy` namespaces. Headers use `#pragma once`; include everything they require. Prefer RAII and values; use `unique_ptr` for exclusive dynamic ownership and `shared_ptr` only for justified shared lifetime such as asset handles. Borrowed views never imply ownership.
+Use `PascalCase` types, `snake_case` functions/variables and `engine`/`elemental_coop` namespaces. Headers use `#pragma once`; include everything they require. Prefer RAII and values; use `unique_ptr` for exclusive dynamic ownership and `shared_ptr` only for justified shared lifetime such as asset handles. Borrowed views never imply ownership.
 
 Engine code must not depend on game code. Avoid unapproved libraries, OS-specific assumptions and global mutable services. Main-thread-only is the baseline until explicitly revised. Use exceptions for invalid input/failed required loads in this starter, and explicit empty/false values for ordinary absence/backpressure; document each public API's behavior.
 

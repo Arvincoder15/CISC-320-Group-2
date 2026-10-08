@@ -1,5 +1,6 @@
 # Assets
-Store game assets under `assets/flappy/` and reusable fixtures under `tests/fixtures/`.
-Record creator, license, source URL, and any modifications for each imported asset.
-Do not commit copyrighted Flappy Bird art or audio without permission.
-`config/flappy.example.json` is a proposed schema example, not loaded by the starter.
+
+Game assets belong in `assets/elemental_coop/`; reusable fixtures belong in `tests/fixtures/`.
+Record creator, license, source URL and modifications for each imported asset. Use original or appropriately licensed art, audio and level layouts.
+`config/elemental_coop.example.json` is proposed tuning data, not loaded by the starter.
+`elemental_coop/levels/room.example.json` is a proposed game schema, not a Tiled export or a playable level yet.

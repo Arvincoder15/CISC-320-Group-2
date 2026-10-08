@@ -14,7 +14,7 @@ Logger and injected typed ResourceCache work without SDL. JSON loading and an ex
 
 ## Why this subsystem exists
 
-Your reusable subsystem should expose a small interface other teammates can test independently. Read [architecture and contracts](../ARCHITECTURE.md) before expanding it; Flappy rules stay in `games/flappy/`.
+Your reusable subsystem should expose a small interface other teammates can test independently. Read [architecture and contracts](../ARCHITECTURE.md) before expanding it; Elemental co-op rules stay in `games/elemental_coop/`.
 
 ## First development tasks
 

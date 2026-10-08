@@ -2,10 +2,12 @@
 #include <cmath>
 #include <stdexcept>
 namespace engine {
-bool VerticalSteering::request_upward_action(const SteeringObservation& observation) const {
-    if (!std::isfinite(observation.position_y) || !std::isfinite(observation.target_y)
-        || !std::isfinite(observation.dead_zone) || observation.dead_zone < 0)
-        throw std::invalid_argument("Invalid steering observation");
-    return observation.position_y > observation.target_y + observation.dead_zone;
+float PatrolController::direction(float position_x, float left_bound, float right_bound) {
+    if (!std::isfinite(position_x) || !std::isfinite(left_bound) || !std::isfinite(right_bound)
+        || left_bound >= right_bound)
+        throw std::invalid_argument("Patrol requires a finite position and ordered bounds");
+    if (position_x >= right_bound) direction_ = -1;
+    else if (position_x <= left_bound) direction_ = 1;
+    return direction_;
 }
 }

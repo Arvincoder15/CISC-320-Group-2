@@ -14,15 +14,15 @@ LoopbackTransport is a bounded test queue. No sockets, remote peers, serializati
 
 ## Why this subsystem exists
 
-Your reusable subsystem should expose a small interface other teammates can test independently. Read [architecture and contracts](../ARCHITECTURE.md) before expanding it; Flappy rules stay in `games/flappy/`.
+Your reusable subsystem should expose a small interface other teammates can test independently. Read [architecture and contracts](../ARCHITECTURE.md) before expanding it; Elemental co-op rules stay in `games/elemental_coop/`.
 
 ## First development tasks
 
-1. **Protocol and authority design** — Review two-player rules and authority with Blake; define versioned packet fields, bounds, IDs, and tick ordering. Proposed effort: 4 hours.
+1. **Protocol and authority design** — Review cooperative authority and one human per player slot with Blake; define input/state packets, level identity, round generation, bounds, IDs and tick ordering. Proposed effort: 4 hours.
 
 2. **Two-process connection prototype** — Choose transport with team review; connect two local processes, handle disconnects, and document reproducible launch commands. Proposed effort: 8 hours.
 
-3. **Snapshot synchronization** — Synchronize agreed state between two clients; reject malformed/oversized/stale data and test disconnect/reconnect behavior. Proposed effort: 8 hours.
+3. **Snapshot synchronization** — Synchronize both characters, switches/doors and shared round state between two clients; reject invalid/stale/wrong-slot input and test disconnect plus shared restart. Proposed effort: 8 hours.
 
 ## Coordinate with
 

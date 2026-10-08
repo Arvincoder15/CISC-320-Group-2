@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "game": { "gravity": 900.0, "flap_speed": 300.0 },
+  "game": { "gravity": 900.0, "move_speed": 180.0, "jump_speed": 360.0, "floor_y": 320.0 },
   "window": { "width": 960, "height": 540 },
   "audio": { "master_volume": 0.8 }
 }

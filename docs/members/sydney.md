@@ -14,13 +14,13 @@ World stores transforms with stable IDs; this is not a full ECS.
 
 ## Why this subsystem exists
 
-Your reusable subsystem should expose a small interface other teammates can test independently. Read [architecture and contracts](../ARCHITECTURE.md) before expanding it; Flappy rules stay in `games/flappy/`.
+Your reusable subsystem should expose a small interface other teammates can test independently. Read [architecture and contracts](../ARCHITECTURE.md) before expanding it; Elemental co-op rules stay in `games/elemental_coop/`.
 
 ## First development tasks
 
 1. **Component storage and entity lifecycle** — Add typed component add/get/remove operations, reject stale IDs, and test deletion cleanup. Proposed effort: 6 hours.
 
-2. **Fixed-step loop and scenes** — Run a fixed simulation step with a capped accumulator; test scene reset and input consumption across multiple ticks. Proposed effort: 6 hours.
+2. **Fixed-step loop and scenes** — Run a fixed simulation step with a capped accumulator; test two-player input consumption, scene reset and round identity across multiple ticks. Proposed effort: 6 hours.
 
 3. **Events and integrated world** — Agree event payloads with gameplay/physics/networking; demonstrate create, update, destroy without dangling references. Proposed effort: 5 hours.
 

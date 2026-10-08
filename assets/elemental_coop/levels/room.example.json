@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "level_id": "cooperative_room_example",
+  "player_spawns": [
+    {
+      "role": "fire",
+      "feet": {
+        "x": 64,
+        "y": 320
+      }
+    },
+    {
+      "role": "water",
+      "feet": {
+        "x": 128,
+        "y": 320
+      }
+    }
+  ],
+  "solids": [
+    {
+      "id": "floor",
+      "position": {
+        "x": 0,
+        "y": 320
+      },
+      "size": {
+        "x": 960,
+        "y": 32
+      }
+    }
+  ],
+  "hazards": [
+    {
+      "id": "lava_zone",
+      "kind": "lava",
+      "position": {
+        "x": 240,
+        "y": 304
+      },
+      "size": {
+        "x": 48,
+        "y": 16
+      }
+    },
+    {
+      "id": "water_zone",
+      "kind": "water",
+      "position": {
+        "x": 400,
+        "y": 304
+      },
+      "size": {
+        "x": 48,
+        "y": 16
+      }
+    },
+    {
+      "id": "toxic_zone",
+      "kind": "toxic",
+      "position": {
+        "x": 560,
+        "y": 304
+      },
+      "size": {
+        "x": 48,
+        "y": 16
+      }
+    }
+  ],
+  "pressure_plates": [
+    {
+      "id": "plate_1",
+      "position": {
+        "x": 192,
+        "y": 312
+      },
+      "size": {
+        "x": 32,
+        "y": 8
+      },
+      "opens_door": "door_1"
+    }
+  ],
+  "doors": [
+    {
+      "id": "door_1",
+      "position": {
+        "x": 720,
+        "y": 256
+      },
+      "size": {
+        "x": 32,
+        "y": 64
+      }
+    }
+  ],
+  "exits": [
+    {
+      "role": "fire",
+      "position": {
+        "x": 832,
+        "y": 272
+      },
+      "size": {
+        "x": 32,
+        "y": 48
+      }
+    },
+    {
+      "role": "water",
+      "position": {
+        "x": 896,
+        "y": 272
+      },
+      "size": {
+        "x": 32,
+        "y": 48
+      }
+    }
+  ]
+}

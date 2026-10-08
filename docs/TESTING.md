@@ -2,13 +2,13 @@
 
 Ten CTest suites exist: architecture, rendering, physics, networking, ai, tools, interaction, infrastructure, gameplay and integration. The starter runner uses exceptions and returns nonzero on failure, including Release builds. Each developer owns their suite; Arvin maintains shared setup.
 
-The unit checks exercise ID deletion/non-reuse, copied render commands, motion/overlap boundaries, bounded loopback ordering, AI thresholds, level validation, one-shot actions, cache reuse/lifetime/failure, and gameplay quit/settings behavior. The integration check follows AI/input → gameplay → physics → world → draw command → loopback snapshot. These checks do not establish SDL rendering, real socket behavior or full game correctness.
+The unit checks exercise ID deletion/non-reuse, copied render commands, motion/overlap boundaries, bounded loopback ordering, patrol-state transitions, level validation, independent held axes and one-shot actions, cache reuse/lifetime/failure, and two-player movement, grounded jumping, elemental hazards, shared loss/restart and joint exits. The integration check follows two independent inputs → gameplay → physics → world → two draw commands → two loopback snapshots. These checks do not establish SDL rendering, real socket behavior or full game correctness.
 
 Next tests by integration stage:
 
 1. SDL window creation, bad texture load and correct resource teardown (platform-dependent integration test).
 2. Valid/invalid JSON configuration, supported Tiled subset, safe failed level reload.
-3. Collision-triggered loss, scoring exactly once, repeated restart without old entities.
+3. Elemental hazards, joint exit completion, linked pressure plates/doors and repeated shared restart without stale objects.
 4. Two processes connecting, state agreement, malformed packet rejection, ordering and disconnect handling.
 5. Manual menus, input focus, audio levels, tool input capture and cross-platform assets.
 

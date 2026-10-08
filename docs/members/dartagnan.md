@@ -14,19 +14,19 @@ Semi-implicit Euler and strict AABB overlap are implemented as small reference h
 
 ## Why this subsystem exists
 
-Your reusable subsystem should expose a small interface other teammates can test independently. Read [architecture and contracts](../ARCHITECTURE.md) before expanding it; Flappy rules stay in `games/flappy/`.
+Your reusable subsystem should expose a small interface other teammates can test independently. Read [architecture and contracts](../ARCHITECTURE.md) before expanding it; Elemental co-op rules stay in `games/elemental_coop/`.
 
 ## First development tasks
 
-1. **Collision components and layers** — Connect body/collider data to the shared ECS; test overlap, edge contact, disabled pairs, and entity removal. Proposed effort: 6 hours.
+1. **Collision components and layers** — Connect body/collider data to ECS; resolve floors, walls and ceilings, track grounded state, and test landing, edge contact and entity removal. Proposed effort: 6 hours.
 
-2. **Collision events and triggers** — Emit contact events without applying game rules; gameplay consumes exactly one hit/trigger as appropriate. Proposed effort: 6 hours.
+2. **Collision events and triggers** — Emit enter/stay/leave events for hazards, exits and pressure plates without elemental game rules in engine physics; test contact cleanup after restart. Proposed effort: 6 hours.
 
 3. **Movement integration and regression** — Agree fixed-step policy, gravity units and speed limits; test restart and document fast-moving collision limitations. Proposed effort: 4 hours.
 
 ## Coordinate with
 
-Sydney for components; Blake for flap/collision semantics; Gunveer for collider data.
+Sydney for components; Blake for platform/trigger semantics; Gunveer for collider data.
 
 ## Before opening a PR
 
