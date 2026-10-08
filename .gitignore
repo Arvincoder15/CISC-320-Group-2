@@ -1,0 +1,7 @@
+/build*/
+/.venv*/
+.DS_Store
+*.user
+/.idea/
+/.vscode/
+/compile_commands.json
