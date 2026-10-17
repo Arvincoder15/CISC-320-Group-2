@@ -32,4 +32,27 @@ namespace engine
     {
         return transforms_.find(id) != transforms_.end();
     }
+
+    TempHealth &World::add_health(EntityId id, TempHealth value)
+    {
+        return health_.insert_or_assign(id, value).first->second;
+    }
+
+    TempHealth *World::get_health(EntityId id)
+    {
+        const auto it = health_.find(id);
+        return it == health_.end() ? nullptr : &it->second;
+    }
+
+    const TempHealth *World::get_health(EntityId id) const
+    {
+        const auto it = health_.find(id);
+        return it == health_.end() ? nullptr : &it->second;
+    }
+
+    bool World::remove_health(EntityId id)
+    {
+        return health_.erase(id) != 0;
+    }
+
 }
