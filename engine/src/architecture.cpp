@@ -2,9 +2,11 @@
 #include <limits>
 #include <stdexcept>
 #include <map>
+#include <algorithm>
 
 namespace engine
 {
+
     EntityId World::create(Transform transform)
     {
         if (next_id_ == std::numeric_limits<EntityId>::max())
@@ -14,7 +16,20 @@ namespace engine
         return id;
     }
 
-    bool World::destroy(EntityId id) { return transforms_.erase(id) != 0; }
+    bool World::destroy(EntityId id)
+    {
+        if (transforms_.erase(id) != 0)
+        {
+
+            for (auto &pair : storages_)
+            {
+                pair.second->remove(id);
+            };
+            return true;
+        };
+
+        return false;
+    }
 
     Transform *World::find(EntityId id)
     {
@@ -31,28 +46,6 @@ namespace engine
     bool World::alive(EntityId id) const
     {
         return transforms_.find(id) != transforms_.end();
-    }
-
-    TempHealth &World::add_health(EntityId id, TempHealth value)
-    {
-        return health_.insert_or_assign(id, value).first->second;
-    }
-
-    TempHealth *World::get_health(EntityId id)
-    {
-        const auto it = health_.find(id);
-        return it == health_.end() ? nullptr : &it->second;
-    }
-
-    const TempHealth *World::get_health(EntityId id) const
-    {
-        const auto it = health_.find(id);
-        return it == health_.end() ? nullptr : &it->second;
-    }
-
-    bool World::remove_health(EntityId id)
-    {
-        return health_.erase(id) != 0;
     }
 
 }
