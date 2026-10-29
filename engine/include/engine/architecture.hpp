@@ -47,7 +47,7 @@ namespace engine
             if (!columnSlot)
                 columnSlot = std::make_unique<Storage<T>>();               // If spot is empty, create a template storage class for the component
             auto &cells = static_cast<Storage<T> &>(*columnSlot).column_;  // cells is the reference variable name for the specific column so that we can read and write entries
-            auto [it, inserted] = items.try_emplace(id, std::move(value)); // Puts component value into the column if it doesn't exist yet and returns an iterator pointing at the entry and a bool for if insertion is successful
+            auto [it, inserted] = cells.try_emplace(id, std::move(value)); // Puts component value into the column if it doesn't exist yet and returns an iterator pointing at the entry and a bool for if insertion is successful
             if (!inserted)
                 throw std::invalid_argument("Entity already has this component");
             return it->second; // Return reference to the stored component
