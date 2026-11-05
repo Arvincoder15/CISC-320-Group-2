@@ -2,7 +2,7 @@
 
 Shared C++ starter for all nine developers. The demonstration is a Fireboy-and-Watergirl-inspired cooperative puzzle platformer with one fire character and one water character. The reusable engine lives in `engine/`; the game lives in `games/elemental_coop/`.
 
-**Current state:** a working headless scaffold, not a graphical game or a multiplayer engine yet. SDL3, JSON, Dear ImGui, Tiled import, sockets, menus, audio, and full ECS storage remain owner tasks. Recording/loopback implementations are explicitly test doubles.
+**Current state:** a working headless scaffold, not a graphical game or a multiplayer engine yet. SDL3, Dear ImGui, Tiled import, sockets, menus and audio remain owner tasks. Sydney has added generic ECS component storage; Arvin's branch adds file resources and validated engine JSON configuration. Recording/loopback implementations are explicitly test doubles.
 
 ## Start here
 
@@ -49,3 +49,5 @@ docs/templates/       Jira, diary, RAD, SDD, meeting and decision templates
 ```
 
 See [milestones](docs/ROADMAP.md) for a proposed integration sequence. Course dates and requirements in these documents come from the supplied conversation notes and need verification against the course site.
+
+Arvin's infrastructure implementation: [usage, ownership, configuration, logging and tests](docs/ARVIN_INFRASTRUCTURE.md). Run `./build/infrastructure_demo assets` after building to exercise it without graphics.

@@ -12,10 +12,15 @@ enum class LogLevel { debug, info, warning, error };
 // Arvin: caller owns the stream; it must outlive the logger. Main-thread only.
 class Logger {
 public:
-    explicit Logger(std::ostream& output) : output_(output) {}
+    explicit Logger(std::ostream& output, LogLevel minimum = LogLevel::debug)
+        : output_(output), minimum_(minimum) {}
     void write(LogLevel level, std::string_view message);
+    void write(LogLevel level, std::string_view subsystem, std::string_view message);
+    void set_minimum_level(LogLevel level) { minimum_ = level; }
+    LogLevel minimum_level() const { return minimum_; }
 private:
     std::ostream& output_;
+    LogLevel minimum_;
 };
 // Strong cache ownership until clear(); outstanding handles may live longer.
 // Loader is injected, so graphics/audio adapters can provide custom deleters.
