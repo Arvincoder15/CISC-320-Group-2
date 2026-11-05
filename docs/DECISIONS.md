@@ -6,12 +6,12 @@
 | Jira and Confluence | Required in supplied notes | All members maintain evidence |
 | C++ standard | Notes say C++26; starter uses provisional C++20 | Sydney/Henry/Arvin verify every machine and record team choice |
 | Compiler matrix | Pending | Record compiler, SDK and CMake versions for all members; run CI |
-| SDL3, JSON, ImGui, Tiled | Intended stack; exact versions not selected | Owners propose pinned versions and licenses |
+| SDL3, JSON, ImGui, Tiled | JSON implementation on Arvin branch uses vendored nlohmann/json 3.12.0 (MIT); team review pending. Other versions pending | Owners review pinned versions and licenses |
 | Dependency acquisition | Pending | Choose one reproducible method before external integration |
 | GoogleTest vs Catch2 | Pending | Arvin presents choice; CTest runner is temporary |
 | Full ECS and events | Pending | Sydney reviews starter contracts and component design |
 | Resource lifetime | Proposed in ARCHITECTURE.md | Arvin, Aryaman and Rohan review before SDL assets |
-| JSON and level schemas | Example only | Arvin/Gunveer define schema and invalid-input behavior |
+| JSON and level schemas | Engine window/audio schema v1 validated on Arvin branch; game/level schema still proposed | Arvin/Gunveer coordinate field ownership and review limits |
 | Network transport and authority | Pending | Henry and Blake prototype and document |
 | Cooperative multiplayer | Confirmed direction; detailed rules proposed | Two human roles; review shared loss, matching exits, host authority and restart |
 | Optional patrol hazards/NPCs | Proposed | Rocco/Blake agree a bounded state-machine demo; both characters remain human-controlled |

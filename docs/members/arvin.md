@@ -4,13 +4,15 @@ Secondary responsibility: Software Developer/Architect.
 
 ## What is here
 
-Logger and injected typed ResourceCache work without SDL. JSON loading and an external test framework are not integrated.
+Logger, typed ResourceCache and a FileResourceManager for cached binary files work without SDL. See [resource management](../RESOURCE_MANAGEMENT.md) for ownership, errors and tests. Validated engine JSON configuration and severity-filtered logging are implemented. Real SDL loaders and an external test framework are not integrated. Start with [your implementation guide](../ARVIN_INFRASTRUCTURE.md).
 
 - Public code: `engine/include/engine/infrastructure.hpp`
+- File service: `engine/include/engine/resource_files.hpp` and `engine/src/resource_files.cpp`
+- File-service tests: `tests/resource_files_test.cpp`
 - Implementation: `engine/src/infrastructure.cpp`
 - Example tests: `tests/infrastructure_test.cpp`
 - Build: follow [SETUP](../SETUP.md).
-- Run your tests: `ctest --test-dir build -C Debug -R '^infrastructure$' --output-on-failure` (use double quotes in Windows shells).
+- Run your tests: `ctest --test-dir build -C Debug -R "^(infrastructure|resource_files|configuration)$" --output-on-failure`.
 
 ## Why this subsystem exists
 
