@@ -1,26 +1,63 @@
-# Settings persistence — step 1
+# Settings persistence — step 2
 
 Branch: `feature/arvin-settings-persistence`, based on the merged infrastructure work.
 
-The first step is serialization: converting the settings in C++ memory into JSON text.
+Serialization converts settings into JSON text. File saving now validates that data,
+then writes it to an application-selected location. The application must choose a
+writable user-settings folder and create that folder before saving; packaged assets
+may be read-only.
 
 ```cpp
 engine::EngineSettings settings;
 settings.window.width = 1280;
 settings.audio.master_volume = 0.5F;
-const std::string json = engine::serialize_engine_settings(settings);
-// json is text in memory. No file has been written yet.
+
+// user_settings_directory is an existing writable folder supplied by the app.
+const auto path = user_settings_directory / "settings.json";
+try {
+    engine::save_engine_settings(path, settings);
+    const auto restored = engine::load_engine_settings(user_settings_directory, "settings.json");
+} catch (const engine::ConfigurationError& error) {
+    // Report invalid settings or a save failure to the user through logging/UI.
+} catch (const engine::ResourceError& error) {
+    // Report a file-read failure (include engine/resource_files.hpp for this type).
+}
 ```
 
-The serializer writes schema version 1 and every supported window/audio field. It rejects invalid dimensions and invalid/non-finite volume values, using the same accepted ranges as loading. A round-trip test serializes settings, parses that text again, and checks every field. This checks that saving the representation will not lose settings.
+## Save behavior
 
-The result is a standalone engine settings document. It does not contain an existing file's `game` section or other data; do not use it to overwrite a shared configuration file yet.
+- New files contain schema version 1 and all supported window/audio settings.
+- Existing files must be valid schema-v1 configurations. Saving replaces their
+  window/audio sections and preserves other top-level values, including `game`.
+  Whitespace and key ordering may change; this is not a text-preserving editor.
+- Invalid settings, corrupt existing files, unsupported schemas, symlink
+  destinations and directory destinations are rejected with `ConfigurationError`.
+  Errors include the requested destination path.
+- A uniquely created sibling temporary directory holds the complete new file.
+  The stream is closed and checked before filesystem rename replaces the old file.
+  The old file is never deleted first. If replacement is refused, saving reports an
+  error. The temporary directory is cleaned up on normal return and exceptions.
 
-Next small steps:
+The API assumes one writer and a trusted, stable user-settings directory. It does
+not coordinate concurrent processes or guarantee durability after power loss.
+Abrupt process termination can leave a temporary directory. Filesystem replacement
+behavior has been exercised on macOS; Windows/Linux verification remains pending.
 
-1. Choose a writable user-settings location with Rohan; packaged assets may be read-only.
-2. Add a file-saving API that preserves unrelated fields when updating shared JSON.
-3. Write to a temporary file and safely replace the destination; test that failures preserve the previous file.
-4. Connect the settings screen's Apply action and load persisted settings on startup.
+`serialize_engine_settings` still produces standalone JSON text only. Use the save
+API when updating a shared document so unrelated sections are retained.
 
-No disk-writing API, automatic save or settings-screen integration is implemented in step 1.
+## Verification
+
+All 12 Debug CTest suites pass on macOS. Configuration tests cover new-file and
+replacement save/load round trips, all five settings fields, unrelated sections,
+invalid settings leaving original bytes untouched, corrupt/unsupported documents,
+missing parent directories, rejected directory/symlink destinations, and temporary
+file cleanup. Disk-full and interrupted-write failures are not fault-injected.
+
+## Next small steps
+
+1. Agree on the writable user-settings location with Rohan.
+2. Load that file on startup, using defaults on first launch and reporting errors.
+3. Connect the settings screen's Apply action to saving and live window/audio changes.
+
+No startup integration or settings-screen integration is implemented yet.

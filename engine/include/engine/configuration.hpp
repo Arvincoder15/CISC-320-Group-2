@@ -28,6 +28,11 @@ EngineSettings parse_engine_settings(std::string_view json, std::string_view sou
 // Validates and converts engine settings to a standalone schema-v1 JSON document.
 // Does not write a file or preserve other sections from an existing document.
 std::string serialize_engine_settings(const EngineSettings& settings);
+// Saves to an application-selected writable path whose parent already exists.
+// Preserves unrelated top-level sections in an existing valid schema-v1 file.
+// Rejects symlinks and invalid existing documents. Errors are ConfigurationError.
+// Single writer only; no guarantee of durability across power loss.
+void save_engine_settings(const std::filesystem::path& path, const EngineSettings& settings);
 // Reads fresh on every call. Returns a complete value; never mutates live settings.
 // File/path errors are ResourceError; schema/JSON errors are ConfigurationError.
 EngineSettings load_engine_settings(const std::filesystem::path& asset_root,

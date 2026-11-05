@@ -63,4 +63,58 @@ int main() { return run_test([] {
     active = engine::load_engine_settings(directory.path, "settings.json");
     CHECK(active.window.width == 800); // Reload reads changed file, not cached bytes.
     CHECK(throws_as<engine::ResourceError>([&] { engine::load_engine_settings(directory.path, "absent.json"); }));
+
+    // Save to a new file, then replace it and check every persisted field.
+    const auto persisted = directory.path / "user-settings.json";
+    for (const auto& original : {defaults, full}) {
+        engine::save_engine_settings(persisted, original);
+        const auto restored = engine::load_engine_settings(directory.path, persisted.filename());
+        CHECK(restored.window.width == original.window.width);
+        CHECK(restored.window.height == original.window.height);
+        CHECK(restored.window.fullscreen == original.window.fullscreen);
+        CHECK(near(restored.audio.master_volume, original.audio.master_volume));
+        CHECK(restored.audio.sound_effects == original.audio.sound_effects);
+    }
+    const auto read_text = [&](const fs::path& path) {
+        engine::FileResourceManager files(directory.path);
+        const auto resource = files.load(path.filename());
+        return std::string(resource->bytes.begin(), resource->bytes.end());
+    };
+    save(R"({"schema_version":1,"game":{"gravity":900,"levels":["forest","ice"]},"custom":true})");
+    engine::save_engine_settings(file, full);
+    const auto shared = read_text(file);
+    CHECK(shared.find("\"gravity\": 900") != std::string::npos);
+    CHECK(shared.find("\"forest\"") != std::string::npos && shared.find("\"ice\"") != std::string::npos);
+    CHECK(shared.find("\"custom\": true") != std::string::npos);
+    CHECK(engine::load_engine_settings(directory.path, file.filename()).window.width == 1280);
+
+    invalid_settings = full;
+    invalid_settings.window.width = 0;
+    CHECK(throws_as<engine::ConfigurationError>([&] { engine::save_engine_settings(file, invalid_settings); }));
+    CHECK(read_text(file) == shared); // Validation failure leaves original bytes intact.
+    for (const std::string broken : {"{broken", R"({"schema_version":2})"}) {
+        save(broken);
+        CHECK(throws_as<engine::ConfigurationError>([&] { engine::save_engine_settings(file, full); }));
+        CHECK(read_text(file) == broken);
+    }
+    bool save_context = false;
+    try { engine::save_engine_settings(directory.path / "missing" / "settings.json", full); }
+    catch (const engine::ConfigurationError& error) {
+        save_context = std::string(error.what()).find("settings.json") != std::string::npos;
+    }
+    CHECK(save_context && !fs::exists(directory.path / "missing"));
+    CHECK(throws_as<engine::ConfigurationError>([&] { engine::save_engine_settings(directory.path, full); }));
+    CHECK(throws_as<engine::ConfigurationError>([&] { engine::save_engine_settings({}, full); }));
+    const auto link = directory.path / "linked-settings.json";
+    std::error_code link_error;
+    fs::create_symlink(persisted, link, link_error);
+    if (!link_error) {
+        const auto before = read_text(persisted);
+        CHECK(throws_as<engine::ConfigurationError>([&] { engine::save_engine_settings(link, defaults); }));
+        CHECK(fs::is_symlink(link) && read_text(persisted) == before);
+    } else {
+        std::cout << "SKIP: settings symlink check: " << link_error.message() << '\n';
+    }
+    for (const auto& entry : fs::directory_iterator(directory.path))
+        CHECK(entry.path().filename().string().find(".engine-settings-") != 0);
 }); }
