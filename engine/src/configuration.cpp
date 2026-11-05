@@ -68,6 +68,23 @@ EngineSettings parse_engine_settings(std::string_view text, std::string_view sou
         throw ConfigurationError("Configuration '" + std::string(source) + "': " + error.what());
     }
 }
+std::string serialize_engine_settings(const EngineSettings& settings) {
+    require(settings.window.width >= 1 && settings.window.width <= 16384,
+            "window.width must be in [1, 16384]");
+    require(settings.window.height >= 1 && settings.window.height <= 16384,
+            "window.height must be in [1, 16384]");
+    require(std::isfinite(settings.audio.master_volume)
+            && settings.audio.master_volume >= 0 && settings.audio.master_volume <= 1,
+            "audio.master_volume must be finite and in [0, 1]");
+    const Json document = {
+        {"schema_version", 1},
+        {"window", {{"width", settings.window.width}, {"height", settings.window.height},
+                    {"fullscreen", settings.window.fullscreen}}},
+        {"audio", {{"master_volume", settings.audio.master_volume},
+                   {"sound_effects", settings.audio.sound_effects}}}
+    };
+    return document.dump(2) + '\n';
+}
 EngineSettings load_engine_settings(const std::filesystem::path& root, const std::filesystem::path& key) {
     FileResourceManager files(root); // Fresh read; no stale configuration cache on reload.
     const auto file = files.load(key);

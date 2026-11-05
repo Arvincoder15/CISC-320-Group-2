@@ -1,6 +1,7 @@
 #pragma once
 #include <filesystem>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 
 namespace engine {
@@ -24,6 +25,9 @@ public:
 // Parses engine settings only. Other top-level sections (e.g. game) are left to
 // their owners. Requires schema_version=1; omitted window/audio fields default.
 EngineSettings parse_engine_settings(std::string_view json, std::string_view source = "<memory>");
+// Validates and converts engine settings to a standalone schema-v1 JSON document.
+// Does not write a file or preserve other sections from an existing document.
+std::string serialize_engine_settings(const EngineSettings& settings);
 // Reads fresh on every call. Returns a complete value; never mutates live settings.
 // File/path errors are ResourceError; schema/JSON errors are ConfigurationError.
 EngineSettings load_engine_settings(const std::filesystem::path& asset_root,
