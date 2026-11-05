@@ -26,6 +26,9 @@ foreach(module IN ITEMS architecture rendering physics networking ai tools inter
     group2_target(engine_${module})
 endforeach()
 
+target_sources(engine_infrastructure PRIVATE engine/src/resource_files.cpp engine/src/configuration.cpp)
+target_include_directories(engine_infrastructure SYSTEM PRIVATE third_party/nlohmann_json/include)
+
 add_library(elemental_coop_game STATIC games/elemental_coop/src/game.cpp)
 target_include_directories(elemental_coop_game PUBLIC games/elemental_coop/include)
 target_link_libraries(elemental_coop_game PUBLIC engine_architecture engine_physics engine_interaction)
@@ -35,8 +38,12 @@ add_executable(engine_demo apps/headless_demo.cpp)
 target_link_libraries(engine_demo PRIVATE elemental_coop_game engine_rendering engine_networking engine_ai engine_tools engine_infrastructure)
 group2_target(engine_demo)
 
+add_executable(infrastructure_demo apps/infrastructure_demo.cpp)
+target_link_libraries(infrastructure_demo PRIVATE engine_infrastructure)
+group2_target(infrastructure_demo)
+
 if(BUILD_TESTING)
-    foreach(suite IN ITEMS architecture rendering physics networking ai tools interaction infrastructure gameplay integration)
+    foreach(suite IN ITEMS architecture rendering physics networking ai tools interaction infrastructure resource_files configuration gameplay integration)
         add_executable(test_${suite} tests/${suite}_test.cpp)
         target_include_directories(test_${suite} PRIVATE tests)
         target_link_libraries(test_${suite} PRIVATE elemental_coop_game engine_rendering engine_networking engine_ai engine_tools engine_infrastructure)

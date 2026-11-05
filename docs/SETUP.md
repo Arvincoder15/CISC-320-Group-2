@@ -30,7 +30,7 @@ In Windows PowerShell with the Visual Studio generator:
 .\build\Debug\engine_demo.exe
 ```
 
-Success means ten passing CTest suites and a demo summary with 120 ticks, two players, two rendered commands and two cached resources. There is no window yet. Each owner's handoff shows how to run only their suite.
+Success means twelve passing CTest suites and a demo summary with 120 ticks, two players, two rendered commands and two cached resources. There is no window yet. Each owner's handoff shows how to run only their suite.
 
 For a separate optimized build:
 
@@ -53,7 +53,7 @@ Add new `.cpp` files to the owning target in `CMakeLists.txt` with `target_sourc
 Dependency versions and acquisition strategy are deliberately unresolved. No automatic fetch occurs during configuration. For each dependency: record a reviewed version/license, choose installed packages or a pinned fetch method, add its target to the owning module, then verify Windows/macOS/Linux CI.
 
 - **SDL3:** Aryaman starts the renderer/window backend with Rohan agreeing who polls events. Arvin supplies resource loader adapters and shutdown tests.
-- **JSON:** Arvin proposes the shared parser/file service; Gunveer owns the level schema/importer; Henry owns protocol serialization.
+- **JSON:** Arvin's branch vendors nlohmann/json 3.12.0 for engine settings (private include, MIT license). Team review remains pending. Gunveer owns level schemas/import; Henry owns protocol serialization.
 - **Dear ImGui:** Gunveer integrates tools using Aryaman's renderer and Rohan's event dispatch.
 - **Tiled:** Gunveer documents the supported exported format/subset; unsupported maps fail clearly.
 - **GoogleTest/Catch2:** team choice, implemented by Arvin. CTest remains the top-level command.
