@@ -42,6 +42,10 @@ add_executable(infrastructure_demo apps/infrastructure_demo.cpp)
 target_link_libraries(infrastructure_demo PRIVATE engine_infrastructure)
 group2_target(infrastructure_demo)
 
+add_executable(ai_demo apps/ai_demo.cpp)
+target_link_libraries(ai_demo PRIVATE engine_ai)
+group2_target(ai_demo)
+
 if(BUILD_TESTING)
     foreach(suite IN ITEMS architecture rendering physics networking ai tools interaction infrastructure resource_files configuration gameplay integration)
         add_executable(test_${suite} tests/${suite}_test.cpp)
