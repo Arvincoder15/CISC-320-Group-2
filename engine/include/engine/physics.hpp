@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <limits>
 #include <set>
+#include <vector>
 
 namespace engine {
 
@@ -87,8 +88,8 @@ class World;
 // - Transform (every entity): position.
 // - Body: the entity moves. Entities without a Body never move.
 // - Collider without Body, trigger == false: a static solid (floor, wall, platform).
-// - Body + solid Collider: a dynamic body, stopped by static solids. Dynamic
-//   bodies do not push or block each other.
+// - Body + solid Collider: a dynamic body, stopped by static solids whose layers
+//   interact with it. Dynamic bodies do not push or block each other.
 // - ContactState: output for dynamic bodies.
 // Destroyed entities are dropped automatically at the start of the next step.
 // Single-threaded; the World must outlive each call that receives it.
@@ -110,6 +111,11 @@ public:
     // a non-finite position/velocity/acceleration, or a collider whose size is not
     // finite and positive or whose offset is not finite.
     void step(World& world, float dt);
+
+    // Registered, live entities whose collider (solid or trigger) overlaps `area`
+    // and whose layer is in `mask`, in ascending ID order. Touching edges do not
+    // count. Intended for AI sight/space checks and gameplay placement tests.
+    std::vector<EntityId> query(const World& world, const Aabb& area, CollisionLayers mask = layer_all) const;
 
 private:
     void prune(const World& world);

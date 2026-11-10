@@ -306,6 +306,51 @@ void test_grounded_probe_and_edges() {
     CHECK(near(ledge_world.find(on_ledge)->position.y, 100));
 }
 
+void test_layer_filtering_and_queries() {
+    constexpr CollisionLayers terrain = 1U << 1U;
+    constexpr CollisionLayers player = 1U << 2U;
+    constexpr CollisionLayers fire_barrier = 1U << 3U;
+    World world;
+    PhysicsSettings settings;
+    settings.gravity = {0, 900};
+    PhysicsSystem physics(settings);
+    const auto floor = add_solid(world, physics, {{0, 100}, {200, 20}}, terrain);
+    const auto barrier = add_solid(world, physics, {{50, 0}, {10, 100}}, fire_barrier);
+    const auto hero = add_character(world, physics, {20, 100}, Body{{1200, 0}, {}});
+    auto& collider = *world.get<Collider>(hero);
+    collider.layer = player;
+    collider.mask = terrain; // Ignores the barrier layer.
+
+    physics.step(world, 1.0F / 60.0F); // Moves 20 px through the barrier at x = 50.
+    CHECK(near(world.find(hero)->position.x, 40));
+    world.get<Body>(hero)->velocity.x = 1200;
+    physics.step(world, 1.0F / 60.0F);
+    CHECK(near(world.find(hero)->position.x, 60)); // Inside the barrier, unblocked.
+    CHECK(world.get<ContactState>(hero)->grounded && world.get<ContactState>(hero)->ground == floor);
+
+    // The barrier must also accept the body's layer: a one-sided mask is not enough.
+    collider.mask = layer_all;
+    world.get<Collider>(barrier)->mask = terrain;
+    world.find(hero)->position.x = 20;
+    world.get<Body>(hero)->velocity.x = 2400;
+    physics.step(world, 1.0F / 60.0F);
+    CHECK(near(world.find(hero)->position.x, 60));
+    world.get<Collider>(barrier)->mask = layer_all;
+    world.find(hero)->position.x = 20;
+    world.get<Body>(hero)->velocity.x = 2400;
+    physics.step(world, 1.0F / 60.0F);
+    CHECK(near(world.find(hero)->position.x, 42) && world.get<ContactState>(hero)->wall_right);
+
+    // Queries filter by layer, exclude touching edges and skip destroyed entities.
+    const auto everything = physics.query(world, {{0, 0}, {200, 200}});
+    CHECK(everything.size() == 3 && everything[0] == floor && everything[2] == hero);
+    CHECK(physics.query(world, {{0, 0}, {200, 200}}, terrain).size() == 1);
+    CHECK(physics.query(world, {{60, 0}, {5, 5}}).empty()); // Touches barrier's right edge.
+    CHECK(physics.query(world, {{0, 0}, {0, 0}}).empty());
+    CHECK(world.destroy(barrier));
+    CHECK(physics.query(world, {{0, 0}, {200, 200}}, fire_barrier).empty());
+}
+
 } // namespace
 
 int main() {
@@ -319,5 +364,6 @@ int main() {
         test_walls();
         test_floors_and_ceilings();
         test_grounded_probe_and_edges();
+        test_layer_filtering_and_queries();
     });
 }
