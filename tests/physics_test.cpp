@@ -167,6 +167,49 @@ void test_invalid_components_rejected_before_mutation() {
     CHECK(near(world.find(good)->position.x, 30));
 }
 
+// Shared helpers for collision scenes.
+EntityId add_solid(World& world, PhysicsSystem& physics, Aabb box, CollisionLayers layer = layer_default) {
+    const auto id = world.create({box.position});
+    world.add<Collider>(id, Collider{{}, box.size, layer});
+    physics.add(world, id);
+    return id;
+}
+
+// A 16x32 character whose Transform position is its feet (bottom centre).
+EntityId add_character(World& world, PhysicsSystem& physics, Vec2 feet, Body body = {}) {
+    const auto id = world.create({feet});
+    world.add<Body>(id, body);
+    world.add<Collider>(id, Collider{{-8, -32}, {16, 32}});
+    physics.add(world, id);
+    return id;
+}
+
+void test_walls() {
+    World world;
+    PhysicsSystem physics;
+    add_solid(world, physics, {{100, 0}, {20, 100}}); // Right wall, left face at x = 100.
+    add_solid(world, physics, {{-20, 0}, {20, 100}}); // Left wall, right face at x = 0.
+    const auto hero = add_character(world, physics, {80, 50}, Body{{600, 0}, {}});
+
+    physics.step(world, 1.0F / 60.0F); // Moves 10 px: right edge reaches 98, no contact.
+    CHECK(near(world.find(hero)->position.x, 90));
+    CHECK(!world.get<ContactState>(hero)->wall_right);
+    physics.step(world, 1.0F / 60.0F); // Would reach 108; stopped flush at 100.
+    CHECK(near(world.find(hero)->position.x, 92));
+    CHECK(world.get<ContactState>(hero)->wall_right && !world.get<ContactState>(hero)->wall_left);
+    CHECK(world.get<Body>(hero)->velocity.x == 0);
+
+    world.get<Body>(hero)->velocity.x = -6000; // 100 px per tick to the left.
+    physics.step(world, 1.0F / 60.0F);
+    CHECK(near(world.find(hero)->position.x, 8)); // Left edge flush with x = 0.
+    CHECK(world.get<ContactState>(hero)->wall_left && !world.get<ContactState>(hero)->wall_right);
+
+    // Flags describe only the latest step.
+    physics.step(world, 1.0F / 60.0F);
+    CHECK(!world.get<ContactState>(hero)->wall_left);
+    CHECK(near(world.find(hero)->position.x, 8));
+}
+
 } // namespace
 
 int main() {
@@ -177,5 +220,6 @@ int main() {
         test_registration_and_removal();
         test_step_integration();
         test_invalid_components_rejected_before_mutation();
+        test_walls();
     });
 }

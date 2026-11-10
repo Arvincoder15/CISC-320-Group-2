@@ -45,6 +45,14 @@ Aabb bounds(const Transform& transform, const Collider& collider);
 // Two colliders interact only when each one's mask accepts the other's layer.
 bool layers_interact(const Collider& a, const Collider& b);
 
+// ECS component written by PhysicsSystem::step for every body with a solid
+// collider (added automatically if missing). Flags describe the most recent
+// positive-duration step only and are cleared at the start of each step.
+struct ContactState {
+    bool wall_left{false};  // Pushed into a solid on the left this step.
+    bool wall_right{false}; // Pushed into a solid on the right this step.
+};
+
 // Movement policy shared by every body a PhysicsSystem steps.
 // - gravity (pixels/s^2) is added to each Body's own acceleration, so a game that
 //   already stores gravity in Body::acceleration should leave this at zero.
@@ -73,6 +81,10 @@ class World;
 // system only remembers which entity IDs to simulate. Components used:
 // - Transform (every entity): position.
 // - Body: the entity moves. Entities without a Body never move.
+// - Collider without Body, trigger == false: a static solid (floor, wall, platform).
+// - Body + solid Collider: a dynamic body, stopped by static solids. Dynamic
+//   bodies do not push or block each other.
+// - ContactState: output for dynamic bodies.
 // Destroyed entities are dropped automatically at the start of the next step.
 // Single-threaded; the World must outlive each call that receives it.
 class PhysicsSystem {
