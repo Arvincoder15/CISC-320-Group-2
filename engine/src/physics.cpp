@@ -168,6 +168,7 @@ void PhysicsSystem::step(World& world, float dt) {
     prune(world);
     // Validate everything first so a bad component never leaves a half-stepped world.
     validate_components(world);
+    events_.clear();
     if (dt == 0) return;
 
     // Static solids do not move during a step, so their boxes are computed once.
@@ -204,6 +205,53 @@ void PhysicsSystem::step(World& world, float dt) {
         move_y(transform, *body, *collider, contacts, solids, dt);
         probe_ground(transform, *body, *collider, contacts, solids, settings_.contact_skin);
     }
+    emit_events(find_trigger_overlaps(world));
+}
+
+std::set<PhysicsSystem::TriggerPair> PhysicsSystem::find_trigger_overlaps(const World& world) const {
+    std::vector<std::pair<EntityId, const Collider*>> bodies;
+    std::vector<std::pair<EntityId, const Collider*>> triggers;
+    for (const auto id : tracked_) {
+        const auto* collider = world.get<Collider>(id);
+        if (collider == nullptr) continue;
+        if (collider->trigger) triggers.emplace_back(id, collider);
+        else if (world.get<Body>(id) != nullptr) bodies.emplace_back(id, collider);
+    }
+    std::set<TriggerPair> current;
+    for (const auto& [body_id, body_collider] : bodies) {
+        const auto body_box = bounds(*world.find(body_id), *body_collider);
+        for (const auto& [trigger_id, trigger_collider] : triggers) {
+            if (layers_interact(*body_collider, *trigger_collider)
+                && overlaps(body_box, bounds(*world.find(trigger_id), *trigger_collider)))
+                current.emplace(body_id, trigger_id);
+        }
+    }
+    return current;
+}
+
+void PhysicsSystem::emit_events(const std::set<TriggerPair>& current) {
+    // Both sets are sorted, so one merge pass classifies every pair.
+    auto before = overlapping_.begin();
+    auto now = current.begin();
+    while (before != overlapping_.end() || now != current.end()) {
+        if (now == current.end() || (before != overlapping_.end() && *before < *now)) {
+            events_.push_back({ContactPhase::leave, before->first, before->second});
+            ++before;
+        } else if (before == overlapping_.end() || *now < *before) {
+            events_.push_back({ContactPhase::enter, now->first, now->second});
+            ++now;
+        } else {
+            events_.push_back({ContactPhase::stay, now->first, now->second});
+            ++before;
+            ++now;
+        }
+    }
+    overlapping_ = current;
+}
+
+void PhysicsSystem::reset() {
+    overlapping_.clear();
+    events_.clear();
 }
 
 std::vector<EntityId> PhysicsSystem::query(const World& world, const Aabb& area, CollisionLayers mask) const {

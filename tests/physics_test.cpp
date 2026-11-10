@@ -351,6 +351,121 @@ void test_layer_filtering_and_queries() {
     CHECK(physics.query(world, {{0, 0}, {200, 200}}, fire_barrier).empty());
 }
 
+EntityId add_trigger(World& world, PhysicsSystem& physics, Aabb box, CollisionLayers layer = layer_default) {
+    const auto id = world.create({box.position});
+    world.add<Collider>(id, Collider{{}, box.size, layer, layer_all, true});
+    physics.add(world, id);
+    return id;
+}
+
+bool has_event(const PhysicsSystem& physics, ContactPhase phase, EntityId body, EntityId trigger) {
+    for (const auto& event : physics.events())
+        if (event == CollisionEvent{phase, body, trigger}) return true;
+    return false;
+}
+
+void test_trigger_events() {
+    World world;
+    PhysicsSystem physics;
+    const auto exit = add_trigger(world, physics, {{40, 60}, {20, 40}});
+    const auto hero = add_character(world, physics, {0, 100}, Body{{1200, 0}, {}}); // 20 px/tick.
+    const auto tick = [&] { physics.step(world, 1.0F / 60.0F); };
+
+    tick(); // Right edge 8 -> 28: not yet inside.
+    CHECK(physics.events().empty());
+    tick(); // Right edge 48: entered; triggers never block movement.
+    CHECK(physics.events().size() == 1 && has_event(physics, ContactPhase::enter, hero, exit));
+    CHECK(near(world.find(hero)->position.x, 40) && !world.get<ContactState>(hero)->wall_right);
+    tick(); // Box 52..68 still overlaps 40..60.
+    CHECK(physics.events().size() == 1 && has_event(physics, ContactPhase::stay, hero, exit));
+    tick(); // Box 72..88: left.
+    CHECK(physics.events().size() == 1 && has_event(physics, ContactPhase::leave, hero, exit));
+    tick();
+    CHECK(physics.events().empty());
+
+    // A zero-length step clears events but remembers the overlap.
+    world.find(hero)->position.x = 50;
+    world.get<Body>(hero)->velocity = {};
+    tick();
+    CHECK(has_event(physics, ContactPhase::enter, hero, exit));
+    physics.step(world, 0);
+    CHECK(physics.events().empty());
+    tick();
+    CHECK(physics.events().size() == 1 && has_event(physics, ContactPhase::stay, hero, exit));
+
+    // Destroying the trigger (e.g. a collected item) reports leave once.
+    CHECK(world.destroy(exit));
+    tick();
+    CHECK(physics.events().size() == 1 && has_event(physics, ContactPhase::leave, hero, exit));
+    tick();
+    CHECK(physics.events().empty());
+}
+
+void test_trigger_filtering_and_moving_triggers() {
+    constexpr CollisionLayers players = 1U << 1U;
+    constexpr CollisionLayers sensors = 1U << 2U;
+    World world;
+    PhysicsSystem physics;
+    const auto wall = add_solid(world, physics, {{100, 0}, {10, 200}});
+    const auto plate = add_trigger(world, physics, {{0, 90}, {200, 10}}, sensors);
+    const auto hidden = add_trigger(world, physics, {{0, 90}, {200, 10}}, sensors);
+    world.get<Collider>(hidden)->mask = layer_default; // Ignores the player layer.
+    const auto a = add_character(world, physics, {20, 100});
+    const auto b = add_character(world, physics, {60, 100});
+    world.get<Collider>(a)->layer = players;
+    world.get<Collider>(b)->layer = players;
+    // A moving hazard: trigger + Body moves straight through the solid wall.
+    const auto hazard = world.create({{90, 50}});
+    world.add<Body>(hazard, Body{{600, 0}, {}});
+    world.add<Collider>(hazard, Collider{{}, {8, 8}, sensors, layer_all, true});
+    physics.add(world, hazard);
+
+    physics.step(world, 1.0F / 60.0F);
+    const std::vector<CollisionEvent> expected{
+        {ContactPhase::enter, a, plate}, {ContactPhase::enter, b, plate}};
+    CHECK(physics.events() == expected); // Ordered by (body, trigger); hidden filtered out.
+    for (int i = 0; i < 3; ++i) physics.step(world, 1.0F / 60.0F);
+    CHECK(world.find(hazard)->position.x > 110); // Passed the wall at x = 100..110.
+    CHECK(world.get<ContactState>(hazard) == nullptr); // Triggers get no ContactState.
+
+    // Removing a body from physics (or making it a trigger) ends its contacts.
+    CHECK(physics.remove(a));
+    world.get<Collider>(b)->trigger = true;
+    physics.step(world, 1.0F / 60.0F);
+    const std::vector<CollisionEvent> ended{
+        {ContactPhase::leave, a, plate}, {ContactPhase::leave, b, plate}};
+    CHECK(physics.events() == ended);
+    CHECK(wall != invalid_entity);
+}
+
+void test_contact_cleanup_after_restart() {
+    World world;
+    PhysicsSystem physics;
+    const auto hazard = add_trigger(world, physics, {{100, 80}, {40, 20}});
+    const auto exit = add_trigger(world, physics, {{0, 80}, {20, 20}}); // Covers the spawn.
+    const auto hero = add_character(world, physics, {120, 100});
+    physics.step(world, 1.0F / 60.0F);
+    CHECK(has_event(physics, ContactPhase::enter, hero, hazard));
+
+    // Restart: the game teleports the hero to spawn and resets physics contacts.
+    world.find(hero)->position = {200, 100};
+    physics.reset();
+    CHECK(physics.events().empty());
+    physics.step(world, 1.0F / 60.0F);
+    CHECK(physics.events().empty()); // No stale leave for the old hazard.
+
+    // Restarting while overlapping produces a fresh enter, not a stay.
+    world.find(hero)->position = {10, 100};
+    physics.step(world, 1.0F / 60.0F);
+    CHECK(has_event(physics, ContactPhase::enter, hero, exit));
+    for (int round = 0; round < 3; ++round) {
+        physics.reset();
+        physics.step(world, 1.0F / 60.0F);
+        CHECK(physics.events().size() == 1 && has_event(physics, ContactPhase::enter, hero, exit));
+    }
+    CHECK(physics.size() == 3); // Restart keeps registered entities.
+}
+
 } // namespace
 
 int main() {
@@ -365,5 +480,8 @@ int main() {
         test_floors_and_ceilings();
         test_grounded_probe_and_edges();
         test_layer_filtering_and_queries();
+        test_trigger_events();
+        test_trigger_filtering_and_moving_triggers();
+        test_contact_cleanup_after_restart();
     });
 }

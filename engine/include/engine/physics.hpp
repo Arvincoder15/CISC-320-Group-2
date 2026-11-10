@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <limits>
 #include <set>
+#include <utility>
 #include <vector>
 
 namespace engine {
@@ -81,6 +82,17 @@ struct PhysicsSettings {
 // that is non-finite or too thin to detect resting contact.
 void validate(const PhysicsSettings& settings);
 
+// Trigger contact transitions between one dynamic body and one trigger.
+// Engine physics only reports overlaps; the game decides what a hazard, exit or
+// pressure plate does with them.
+enum class ContactPhase { enter, stay, leave };
+struct CollisionEvent {
+    ContactPhase phase{ContactPhase::enter};
+    EntityId body{invalid_entity};    // Entity with Body + solid Collider.
+    EntityId trigger{invalid_entity}; // Entity with a trigger Collider.
+    bool operator==(const CollisionEvent&) const = default;
+};
+
 class World;
 
 // Steps the entities registered with it. The World owns all component data; the
@@ -90,6 +102,8 @@ class World;
 // - Collider without Body, trigger == false: a static solid (floor, wall, platform).
 // - Body + solid Collider: a dynamic body, stopped by static solids whose layers
 //   interact with it. Dynamic bodies do not push or block each other.
+// - Collider with trigger == true: never blocks; reported through events().
+//   A trigger with a Body (e.g. a patrolling hazard) moves without collision.
 // - ContactState: output for dynamic bodies.
 // Destroyed entities are dropped automatically at the start of the next step.
 // Single-threaded; the World must outlive each call that receives it.
@@ -112,6 +126,19 @@ public:
     // finite and positive or whose offset is not finite.
     void step(World& world, float dt);
 
+    // Trigger events produced by the latest step, ordered by (body, trigger) ID.
+    // enter: overlap began; stay: overlap continues; leave: overlap ended, or one
+    // entity was destroyed, removed from physics, or stopped being a body/trigger
+    // (IDs in leave events may no longer be alive). Layers must interact.
+    // A dt == 0 step clears events but keeps the tracked overlaps. The reference
+    // is borrowed and is invalidated by the next step() or reset().
+    const std::vector<CollisionEvent>& events() const { return events_; }
+
+    // Forgets all tracked overlaps and pending events without emitting leave
+    // events. Call after a game restart has repositioned its entities: bodies
+    // that start inside a trigger then receive a fresh enter event.
+    void reset();
+
     // Registered, live entities whose collider (solid or trigger) overlaps `area`
     // and whose layer is in `mask`, in ascending ID order. Touching edges do not
     // count. Intended for AI sight/space checks and gameplay placement tests.
@@ -122,8 +149,14 @@ private:
     void validate_components(const World& world) const;
     void accelerate(Body& body, float dt) const;
 
+    using TriggerPair = std::pair<EntityId, EntityId>; // (body, trigger)
+    std::set<TriggerPair> find_trigger_overlaps(const World& world) const;
+    void emit_events(const std::set<TriggerPair>& current);
+
     PhysicsSettings settings_;
     std::set<EntityId> tracked_;
+    std::set<TriggerPair> overlapping_;
+    std::vector<CollisionEvent> events_;
 };
 
 } // namespace engine
