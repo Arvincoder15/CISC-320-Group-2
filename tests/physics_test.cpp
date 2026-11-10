@@ -210,6 +210,55 @@ void test_walls() {
     CHECK(near(world.find(hero)->position.x, 8));
 }
 
+void test_floors_and_ceilings() {
+    World world;
+    PhysicsSettings settings;
+    settings.gravity = {0, 900};
+    PhysicsSystem physics(settings);
+    const auto floor = add_solid(world, physics, {{0, 320}, {400, 40}});
+    const auto hero = add_character(world, physics, {100, 300});
+    const auto contacts = [&] { return *world.get<ContactState>(hero); };
+
+    // Landing: falls, stops with feet exactly on the floor top, velocity cleared.
+    CHECK(world.get<ContactState>(hero) == nullptr); // Created by the first step.
+    int ticks = 0;
+    do physics.step(world, 1.0F / 60.0F);
+    while (!contacts().grounded && ++ticks < 120);
+    CHECK(ticks < 120);
+    CHECK(near(world.find(hero)->position.y, 320));
+    CHECK(world.get<Body>(hero)->velocity.y == 0);
+    CHECK(!contacts().ceiling);
+
+    // Gravity keeps a resting body grounded every tick without sinking.
+    for (int i = 0; i < 30; ++i) {
+        physics.step(world, 1.0F / 60.0F);
+        CHECK(contacts().grounded && near(world.find(hero)->position.y, 320));
+    }
+
+    // Walking across two adjacent floor tiles does not snag on the seam.
+    World tiles;
+    PhysicsSystem tiled(settings);
+    add_solid(tiles, tiled, {{0, 320}, {32, 32}});
+    add_solid(tiles, tiled, {{32, 320}, {32, 32}});
+    const auto walker = add_character(tiles, tiled, {10, 320});
+    for (int i = 0; i < 20; ++i) {
+        tiles.get<Body>(walker)->velocity.x = 60;
+        tiled.step(tiles, 1.0F / 60.0F);
+        CHECK(!tiles.get<ContactState>(walker)->wall_right);
+        CHECK(near(tiles.find(walker)->position.y, 320));
+    }
+    CHECK(near(tiles.find(walker)->position.x, 30));
+
+    // Ceiling: an upward jump into a low ceiling stops flush and cancels rise.
+    add_solid(world, physics, {{0, 260}, {400, 20}}); // Bottom face at y = 280.
+    world.get<Body>(hero)->velocity.y = -600;
+    physics.step(world, 1.0F / 60.0F); // Would rise 10 px; head is at 288 -> 278.
+    CHECK(contacts().ceiling && !contacts().grounded);
+    CHECK(near(world.find(hero)->position.y, 312)); // Head flush with y = 280.
+    CHECK(world.get<Body>(hero)->velocity.y == 0);
+    CHECK(floor != invalid_entity);
+}
+
 } // namespace
 
 int main() {
@@ -221,5 +270,6 @@ int main() {
         test_step_integration();
         test_invalid_components_rejected_before_mutation();
         test_walls();
+        test_floors_and_ceilings();
     });
 }

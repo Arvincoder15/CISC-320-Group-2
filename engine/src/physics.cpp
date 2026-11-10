@@ -47,6 +47,25 @@ void move_x(Transform& transform, Body& body, const Collider& collider, ContactS
     }
 }
 
+// Moves along y, landing on floors (moving down) or bumping ceilings (moving up).
+void move_y(Transform& transform, Body& body, const Collider& collider, ContactState& contacts,
+            const std::vector<Solid>& solids, float dt) {
+    const float dy = body.velocity.y * dt;
+    if (dy == 0) return;
+    transform.position.y += dy;
+    for (const auto& solid : solids) {
+        if (!penetrates(bounds(transform, collider), solid.box)) continue;
+        if (dy > 0) {
+            transform.position.y = solid.box.position.y - collider.size.y - collider.offset.y;
+            contacts.grounded = true;
+        } else {
+            transform.position.y = solid.box.position.y + solid.box.size.y - collider.offset.y;
+            contacts.ceiling = true;
+        }
+        body.velocity.y = 0;
+    }
+}
+
 } // namespace
 
 void integrate(Transform& transform, Body& body, float dt) {
@@ -160,7 +179,7 @@ void PhysicsSystem::step(World& world, float dt) {
         // Axis-separated resolution: x first, so walking along a floor made of
         // several adjacent tiles never catches on the seams between them.
         move_x(transform, *body, *collider, contacts, solids, dt);
-        transform.position.y += body->velocity.y * dt;
+        move_y(transform, *body, *collider, contacts, solids, dt);
     }
 }
 

@@ -49,6 +49,8 @@ bool layers_interact(const Collider& a, const Collider& b);
 // collider (added automatically if missing). Flags describe the most recent
 // positive-duration step only and are cleared at the start of each step.
 struct ContactState {
+    bool grounded{false};   // Landed on a solid below this step.
+    bool ceiling{false};    // Bumped a solid above this step (upward velocity zeroed).
     bool wall_left{false};  // Pushed into a solid on the left this step.
     bool wall_right{false}; // Pushed into a solid on the right this step.
 };
