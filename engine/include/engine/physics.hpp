@@ -49,10 +49,13 @@ bool layers_interact(const Collider& a, const Collider& b);
 // collider (added automatically if missing). Flags describe the most recent
 // positive-duration step only and are cleared at the start of each step.
 struct ContactState {
-    bool grounded{false};   // Landed on a solid below this step.
+    bool grounded{false};   // Landed on, or resting within contact_skin of, a solid below.
     bool ceiling{false};    // Bumped a solid above this step (upward velocity zeroed).
     bool wall_left{false};  // Pushed into a solid on the left this step.
     bool wall_right{false}; // Pushed into a solid on the right this step.
+    // The solid currently supporting the body (lowest ID if several), or
+    // invalid_entity. It may be destroyed later; look it up through the World.
+    EntityId ground{invalid_entity};
 };
 
 // Movement policy shared by every body a PhysicsSystem steps.

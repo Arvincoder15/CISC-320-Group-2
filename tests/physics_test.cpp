@@ -259,6 +259,53 @@ void test_floors_and_ceilings() {
     CHECK(floor != invalid_entity);
 }
 
+void test_grounded_probe_and_edges() {
+    World world;
+    PhysicsSystem physics; // No gravity: grounding must come from the probe.
+    const auto left = add_solid(world, physics, {{0, 100}, {50, 10}});
+    const auto right = add_solid(world, physics, {{50, 100}, {50, 10}});
+    const auto resting = add_character(world, physics, {20, 100});
+    const auto straddling = add_character(world, physics, {50, 100});
+    const auto hovering = add_character(world, physics, {20, 99.9F});
+    const auto rising = add_character(world, physics, {80, 100}, Body{{0, -1}, {}});
+    physics.step(world, 1.0F / 60.0F);
+    CHECK(world.get<ContactState>(resting)->grounded);
+    CHECK(world.get<ContactState>(resting)->ground == left);
+    CHECK(world.get<ContactState>(straddling)->ground == left); // Lowest ID of two supports.
+    CHECK(!world.get<ContactState>(hovering)->grounded);
+    CHECK(world.get<ContactState>(hovering)->ground == invalid_entity);
+    CHECK(!world.get<ContactState>(rising)->grounded);
+
+    // Removing the support clears grounded state on the next step.
+    CHECK(world.destroy(left));
+    physics.step(world, 1.0F / 60.0F);
+    CHECK(!world.get<ContactState>(resting)->grounded);
+    CHECK(world.get<ContactState>(straddling)->ground == right);
+
+    // Edge contact: a body whose side only touches the platform's side, with
+    // its feet level with the top, is not supported and falls past the edge.
+    World edge_world;
+    PhysicsSettings settings;
+    settings.gravity = {0, 900};
+    PhysicsSystem edge_physics(settings);
+    add_solid(edge_world, edge_physics, {{108, 100}, {50, 10}});
+    const auto at_edge = add_character(edge_world, edge_physics, {100, 100}); // Right edge at 108.
+    edge_physics.step(edge_world, 1.0F / 60.0F);
+    CHECK(!edge_world.get<ContactState>(at_edge)->grounded);
+    for (int i = 0; i < 10; ++i) edge_physics.step(edge_world, 1.0F / 60.0F);
+    CHECK(edge_world.find(at_edge)->position.y > 101);
+    CHECK(!edge_world.get<ContactState>(at_edge)->wall_right);
+
+    // One pixel of overlap past the edge is enough to stand on.
+    World ledge_world;
+    PhysicsSystem ledge_physics(settings);
+    add_solid(ledge_world, ledge_physics, {{108, 100}, {50, 10}});
+    const auto on_ledge = add_character(ledge_world, ledge_physics, {101, 100});
+    for (int i = 0; i < 10; ++i) ledge_physics.step(ledge_world, 1.0F / 60.0F);
+    CHECK(ledge_world.get<ContactState>(on_ledge)->grounded);
+    CHECK(near(ledge_world.find(on_ledge)->position.y, 100));
+}
+
 } // namespace
 
 int main() {
@@ -271,5 +318,6 @@ int main() {
         test_invalid_components_rejected_before_mutation();
         test_walls();
         test_floors_and_ceilings();
+        test_grounded_probe_and_edges();
     });
 }

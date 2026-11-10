@@ -66,6 +66,22 @@ void move_y(Transform& transform, Body& body, const Collider& collider, ContactS
     }
 }
 
+// Resting contact: a body standing still (or with zero gravity) never moves into
+// the floor, so look a thin skin below it instead. Rising bodies are never grounded.
+// A box that only shares a vertical edge or a corner with a solid is not supported.
+void probe_ground(const Transform& transform, const Body& body, const Collider& collider,
+                  ContactState& contacts, const std::vector<Solid>& solids, float skin) {
+    if (body.velocity.y < 0) return;
+    auto probe = bounds(transform, collider);
+    probe.position.y += skin;
+    for (const auto& solid : solids) {
+        if (!penetrates(probe, solid.box)) continue;
+        contacts.grounded = true;
+        contacts.ground = solid.id; // Lowest entity ID wins when several support the body.
+        return;
+    }
+}
+
 } // namespace
 
 void integrate(Transform& transform, Body& body, float dt) {
@@ -180,6 +196,7 @@ void PhysicsSystem::step(World& world, float dt) {
         // several adjacent tiles never catches on the seams between them.
         move_x(transform, *body, *collider, contacts, solids, dt);
         move_y(transform, *body, *collider, contacts, solids, dt);
+        probe_ground(transform, *body, *collider, contacts, solids, settings_.contact_skin);
     }
 }
 
