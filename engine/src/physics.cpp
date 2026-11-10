@@ -186,26 +186,43 @@ void PhysicsSystem::step(World& world, float dt) {
         else world.add<ContactState>(id);
     }
 
-    for (const auto id : tracked_) {
-        auto* body = world.get<Body>(id);
-        if (body == nullptr) continue;
-        auto& transform = *world.find(id);
-        accelerate(*body, dt);
-        const auto* collider = world.get<Collider>(id);
-        if (collider == nullptr || collider->trigger) {
-            // Unresolved movers: plain bodies and moving triggers.
-            transform.position.x += body->velocity.x * dt;
-            transform.position.y += body->velocity.y * dt;
-            continue;
+    // Split long steps into equal substeps. The small bias stops float rounding
+    // from turning an exact multiple of max_substep into one extra substep.
+    const double ratio = static_cast<double>(dt) / settings_.max_substep;
+    const int substeps = ratio >= settings_.max_substeps
+        ? settings_.max_substeps
+        : std::max(1, static_cast<int>(std::ceil(ratio - 1e-4)));
+    const float h = dt / static_cast<float>(substeps);
+
+    // A trigger touched during any substep counts as overlapping for this step,
+    // so a fast body still reports a thin trigger it crossed mid-step.
+    std::set<TriggerPair> touched;
+    for (int substep = 0; substep < substeps; ++substep) {
+        for (const auto id : tracked_) {
+            auto* body = world.get<Body>(id);
+            if (body == nullptr) continue;
+            auto& transform = *world.find(id);
+            accelerate(*body, h);
+            const auto* collider = world.get<Collider>(id);
+            if (collider == nullptr || collider->trigger) {
+                // Unresolved movers: plain bodies and moving triggers.
+                transform.position.x += body->velocity.x * h;
+                transform.position.y += body->velocity.y * h;
+                continue;
+            }
+            auto& contacts = *world.get<ContactState>(id);
+            // Support describes the final substep; wall/ceiling hits accumulate.
+            contacts.grounded = false;
+            contacts.ground = invalid_entity;
+            // Axis-separated resolution: x first, so walking along a floor made of
+            // several adjacent tiles never catches on the seams between them.
+            move_x(transform, *body, *collider, contacts, solids, h);
+            move_y(transform, *body, *collider, contacts, solids, h);
+            probe_ground(transform, *body, *collider, contacts, solids, settings_.contact_skin);
         }
-        auto& contacts = *world.get<ContactState>(id);
-        // Axis-separated resolution: x first, so walking along a floor made of
-        // several adjacent tiles never catches on the seams between them.
-        move_x(transform, *body, *collider, contacts, solids, dt);
-        move_y(transform, *body, *collider, contacts, solids, dt);
-        probe_ground(transform, *body, *collider, contacts, solids, settings_.contact_skin);
+        touched.merge(find_trigger_overlaps(world));
     }
-    emit_events(find_trigger_overlaps(world));
+    emit_events(touched);
 }
 
 std::set<PhysicsSystem::TriggerPair> PhysicsSystem::find_trigger_overlaps(const World& world) const {

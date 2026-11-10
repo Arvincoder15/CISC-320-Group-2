@@ -107,6 +107,17 @@ class World;
 // - ContactState: output for dynamic bodies.
 // Destroyed entities are dropped automatically at the start of the next step.
 // Single-threaded; the World must outlive each call that receives it.
+//
+// Known limitations (fast-moving collision and scope):
+// - Discrete overlap tests, not swept collision. A body moving further in one
+//   substep than its own size plus a solid's thickness can tunnel through it.
+//   Substepping, speed limits and thicker level geometry keep this in check;
+//   e.g. with 1/60 s substeps a 32 px tall body cannot fall through any floor
+//   below 1920 px/s (32 px per substep). A step longer than max_substep * max_substeps uses
+//   larger substeps, so tunnelling becomes possible again.
+// - A body that starts a step already overlapping a solid is not pushed out.
+// - Static solids are assumed not to move; moving platforms are not supported.
+// - Broad phase is brute force (bodies x solids per substep); fine for small rooms.
 class PhysicsSystem {
 public:
     explicit PhysicsSystem(PhysicsSettings settings = {}); // Throws for invalid settings.
@@ -121,6 +132,8 @@ public:
 
     // Advances every registered body by dt seconds (finite and nonnegative).
     // dt == 0 changes nothing. Bodies are updated in ascending entity-ID order.
+    // dt is split into ceil(dt / max_substep) equal substeps, capped at
+    // max_substeps; each substep integrates and resolves every body once.
     // Throws std::invalid_argument, before changing any component, for a bad dt,
     // a non-finite position/velocity/acceleration, or a collider whose size is not
     // finite and positive or whose offset is not finite.

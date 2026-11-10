@@ -103,6 +103,7 @@ void test_step_integration() {
     World world;
     PhysicsSettings settings;
     settings.gravity = {0, 600};
+    settings.max_substep = 1; // One substep: results match a single integrate() call.
     PhysicsSystem physics(settings);
     const auto mover = world.create({{10, 20}});
     const auto fixed = world.create({{5, 5}}); // No Body: never moves.
@@ -466,6 +467,71 @@ void test_contact_cleanup_after_restart() {
     CHECK(physics.size() == 3); // Restart keeps registered entities.
 }
 
+void test_substeps_and_tunnelling() {
+    // A 32 px body falling 80 px per 1/15 s step onto a 4 px floor.
+    const auto drop = [](PhysicsSettings settings) {
+        World world;
+        PhysicsSystem physics(settings);
+        add_solid(world, physics, {{0, 100}, {100, 4}});
+        const auto hero = add_character(world, physics, {50, 60}, Body{{0, 1200}, {}});
+        for (int i = 0; i < 3; ++i) physics.step(world, 1.0F / 15.0F);
+        return std::pair{world.find(hero)->position.y, world.get<ContactState>(hero)->grounded};
+    };
+    PhysicsSettings single;
+    single.max_substep = 1; // Documented limitation: 80 px > 32 px + 4 px tunnels.
+    const auto [tunnelled_y, tunnelled_grounded] = drop(single);
+    CHECK(tunnelled_y > 104 && !tunnelled_grounded);
+    const auto [landed_y, landed_grounded] = drop(PhysicsSettings{}); // 4 x 20 px substeps.
+    CHECK(near(landed_y, 100) && landed_grounded);
+
+    // Substeps follow semi-implicit Euler at the smaller step size.
+    World world;
+    PhysicsSettings settings;
+    settings.gravity = {0, 900};
+    settings.max_substep = 0.25F;
+    PhysicsSystem physics(settings);
+    const auto body = world.create();
+    world.add<Body>(body);
+    physics.add(world, body);
+    physics.step(world, 1); // Four 0.25 s substeps: 900 * 0.0625 * (1+2+3+4).
+    CHECK(near(world.find(body)->position.y, 562.5F));
+    CHECK(near(world.get<Body>(body)->velocity.y, 900));
+
+    // Above max_substeps the step is still taken, with larger substeps.
+    settings.max_substeps = 2;
+    PhysicsSystem capped(settings);
+    World capped_world;
+    const auto capped_body = capped_world.create();
+    capped_world.add<Body>(capped_body);
+    capped.add(capped_world, capped_body);
+    capped.step(capped_world, 1); // Two 0.5 s substeps: 900 * 0.25 * (1+2).
+    CHECK(near(capped_world.find(capped_body)->position.y, 675));
+
+    // A thin trigger crossed between substeps is still reported.
+    World fast_world;
+    PhysicsSystem fast;
+    const auto sensor = add_trigger(fast_world, fast, {{50, 0}, {4, 200}});
+    const auto runner = add_character(fast_world, fast, {0, 100}, Body{{1200, 0}, {}});
+    fast.step(fast_world, 1.0F / 15.0F); // Ends with box 72..88, past the sensor.
+    CHECK(near(fast_world.find(runner)->position.x, 80));
+    CHECK(fast.events().size() == 1 && has_event(fast, ContactPhase::enter, runner, sensor));
+    fast.step(fast_world, 1.0F / 15.0F);
+    CHECK(fast.events().size() == 1 && has_event(fast, ContactPhase::leave, runner, sensor));
+
+    // Walking off a ledge mid-step leaves the body ungrounded at the end.
+    // Four 20 px substeps: supported after the first two, past the edge after that.
+    World ledge_world;
+    PhysicsSettings falling;
+    falling.gravity = {0, 900};
+    PhysicsSystem ledge(falling);
+    add_solid(ledge_world, ledge, {{0, 100}, {50, 10}});
+    const auto walker = add_character(ledge_world, ledge, {10, 100}, Body{{1200, 0}, {}});
+    ledge.step(ledge_world, 1.0F / 15.0F);
+    CHECK(near(ledge_world.find(walker)->position.x, 90));
+    CHECK(!ledge_world.get<ContactState>(walker)->grounded);
+    CHECK(ledge_world.get<ContactState>(walker)->ground == invalid_entity);
+}
+
 } // namespace
 
 int main() {
@@ -483,5 +549,6 @@ int main() {
         test_trigger_events();
         test_trigger_filtering_and_moving_triggers();
         test_contact_cleanup_after_restart();
+        test_substeps_and_tunnelling();
     });
 }
