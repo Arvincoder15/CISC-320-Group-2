@@ -1,5 +1,8 @@
 #include "engine/physics.hpp"
+#include "engine/architecture.hpp"
+#include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <stdexcept>
 
 namespace engine {
@@ -45,6 +48,44 @@ void validate(const PhysicsSettings& settings) {
         throw std::invalid_argument("Physics max_substeps must be at least 1");
     if (!std::isfinite(settings.contact_skin) || settings.contact_skin <= 2 * resolution_tolerance)
         throw std::invalid_argument("Physics contact_skin must be finite and thicker than the resolution tolerance");
+}
+
+PhysicsSystem::PhysicsSystem(PhysicsSettings settings) : settings_(settings) {
+    validate(settings_);
+}
+
+void PhysicsSystem::add(const World& world, EntityId id) {
+    if (!world.alive(id)) throw std::invalid_argument("Cannot add a dead entity to physics");
+    tracked_.insert(id);
+}
+
+bool PhysicsSystem::remove(EntityId id) {
+    return tracked_.erase(id) != 0;
+}
+
+void PhysicsSystem::prune(const World& world) {
+    std::erase_if(tracked_, [&](EntityId id) { return !world.alive(id); });
+}
+
+void PhysicsSystem::accelerate(Body& body, float dt) const {
+    body.velocity.x += (body.acceleration.x + settings_.gravity.x) * dt;
+    body.velocity.y += (body.acceleration.y + settings_.gravity.y) * dt;
+    body.velocity.x = std::clamp(body.velocity.x, -settings_.max_speed.x, settings_.max_speed.x);
+    body.velocity.y = std::clamp(body.velocity.y, -settings_.max_speed.y, settings_.max_speed.y);
+}
+
+void PhysicsSystem::step(World& world, float dt) {
+    if (!std::isfinite(dt) || dt < 0.0F) throw std::invalid_argument("dt must be finite and nonnegative");
+    prune(world);
+    if (dt == 0) return;
+    for (const auto id : tracked_) {
+        auto* body = world.get<Body>(id);
+        if (body == nullptr) continue;
+        auto& transform = *world.find(id);
+        accelerate(*body, dt);
+        transform.position.x += body->velocity.x * dt;
+        transform.position.y += body->velocity.y * dt;
+    }
 }
 
 } // namespace engine

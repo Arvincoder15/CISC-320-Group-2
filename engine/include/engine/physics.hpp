@@ -4,8 +4,10 @@
 
 #pragma once
 #include "engine/types.hpp"
+#include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <set>
 
 namespace engine {
 
@@ -64,5 +66,37 @@ struct PhysicsSettings {
 // limits, nonpositive/non-finite max_substep, max_substeps < 1, or a contact skin
 // that is non-finite or too thin to detect resting contact.
 void validate(const PhysicsSettings& settings);
+
+class World;
+
+// Steps the entities registered with it. The World owns all component data; the
+// system only remembers which entity IDs to simulate. Components used:
+// - Transform (every entity): position.
+// - Body: the entity moves. Entities without a Body never move.
+// Destroyed entities are dropped automatically at the start of the next step.
+// Single-threaded; the World must outlive each call that receives it.
+class PhysicsSystem {
+public:
+    explicit PhysicsSystem(PhysicsSettings settings = {}); // Throws for invalid settings.
+    const PhysicsSettings& settings() const { return settings_; }
+
+    // Registers a live entity (throws std::invalid_argument otherwise). Adding an
+    // entity twice is harmless. Components may be added before or after.
+    void add(const World& world, EntityId id);
+    bool remove(EntityId id); // False if the entity was not registered.
+    bool contains(EntityId id) const { return tracked_.count(id) != 0; }
+    std::size_t size() const { return tracked_.size(); }
+
+    // Advances every registered body by dt seconds (finite and nonnegative).
+    // dt == 0 changes nothing. Bodies are updated in ascending entity-ID order.
+    void step(World& world, float dt);
+
+private:
+    void prune(const World& world);
+    void accelerate(Body& body, float dt) const;
+
+    PhysicsSettings settings_;
+    std::set<EntityId> tracked_;
+};
 
 } // namespace engine

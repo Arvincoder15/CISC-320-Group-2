@@ -1,4 +1,5 @@
 #include "engine/physics.hpp"
+#include "engine/architecture.hpp"
 #include "test_support.hpp"
 #include <limits>
 
@@ -75,6 +76,65 @@ void test_settings_validation() {
     validate(settings);
 }
 
+void test_registration_and_removal() {
+    World world;
+    PhysicsSystem physics;
+    const auto a = world.create();
+    const auto b = world.create();
+    physics.add(world, a);
+    physics.add(world, a); // Idempotent.
+    physics.add(world, b);
+    CHECK(physics.size() == 2 && physics.contains(a) && physics.contains(b));
+    CHECK(physics.remove(b) && !physics.remove(b) && !physics.contains(b));
+    CHECK(throws_as<std::invalid_argument>([&] { physics.add(world, invalid_entity); }));
+    CHECK(throws_as<std::invalid_argument>([&] { physics.add(world, 999); }));
+    CHECK(throws_as<std::invalid_argument>([] { PhysicsSystem bad(PhysicsSettings{{}, {}, 0}); }));
+
+    // Destroyed entities are pruned on the next step without touching the World.
+    world.add<Body>(a, Body{{10, 0}, {}});
+    physics.add(world, b);
+    CHECK(world.destroy(a));
+    physics.step(world, 1.0F / 60.0F);
+    CHECK(physics.size() == 1 && !physics.contains(a) && physics.contains(b));
+    CHECK(world.count<Body>() == 0);
+}
+
+void test_step_integration() {
+    World world;
+    PhysicsSettings settings;
+    settings.gravity = {0, 600};
+    PhysicsSystem physics(settings);
+    const auto mover = world.create({{10, 20}});
+    const auto fixed = world.create({{5, 5}}); // No Body: never moves.
+    world.add<Body>(mover, Body{{60, 0}, {0, 300}});
+    physics.add(world, mover);
+    physics.add(world, fixed);
+
+    // Matches semi-implicit Euler with body acceleration plus global gravity.
+    physics.step(world, 0.5F);
+    CHECK(near(world.get<Body>(mover)->velocity.y, 450));
+    CHECK(near(world.find(mover)->position.x, 40));
+    CHECK(near(world.find(mover)->position.y, 245));
+    CHECK(near(world.find(fixed)->position.x, 5) && near(world.find(fixed)->position.y, 5));
+
+    physics.step(world, 0);
+    CHECK(near(world.find(mover)->position.y, 245));
+    CHECK(throws_as<std::invalid_argument>([&] { physics.step(world, -1); }));
+    CHECK(throws_as<std::invalid_argument>([&] { physics.step(world, std::numeric_limits<float>::quiet_NaN()); }));
+    CHECK(near(world.find(mover)->position.y, 245));
+
+    // Speed limits clamp both axes after acceleration, including an initial overspeed.
+    World capped_world;
+    settings.max_speed = {100, 500};
+    PhysicsSystem capped(settings);
+    const auto falling = capped_world.create();
+    capped_world.add<Body>(falling, Body{{-250, 0}, {}});
+    capped.add(capped_world, falling);
+    for (int i = 0; i < 120; ++i) capped.step(capped_world, 1.0F / 60.0F);
+    CHECK(near(capped_world.get<Body>(falling)->velocity.x, -100));
+    CHECK(near(capped_world.get<Body>(falling)->velocity.y, 500));
+}
+
 } // namespace
 
 int main() {
@@ -82,5 +142,7 @@ int main() {
         test_integration_and_overlap();
         test_collider_bounds_and_layers();
         test_settings_validation();
+        test_registration_and_removal();
+        test_step_integration();
     });
 }
