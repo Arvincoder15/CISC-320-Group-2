@@ -135,6 +135,38 @@ void test_step_integration() {
     CHECK(near(capped_world.get<Body>(falling)->velocity.y, 500));
 }
 
+void test_invalid_components_rejected_before_mutation() {
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    World world;
+    PhysicsSystem physics;
+    const auto good = world.create();
+    const auto bad = world.create();
+    world.add<Body>(good, Body{{30, 0}, {}});
+    auto& collider = world.add<Collider>(bad, Collider{{}, {0, 10}});
+    physics.add(world, good);
+    physics.add(world, bad);
+    const auto unchanged = [&] { return near(world.find(good)->position.x, 0); };
+
+    CHECK(throws_as<std::invalid_argument>([&] { physics.step(world, 1); }));
+    CHECK(unchanged());
+    collider.size = {10, nan};
+    CHECK(throws_as<std::invalid_argument>([&] { physics.step(world, 1); }));
+    collider.size = {10, 10};
+    collider.offset = {nan, 0};
+    CHECK(throws_as<std::invalid_argument>([&] { physics.step(world, 1); }));
+    collider.offset = {};
+    world.add<Body>(bad, Body{{0, 0}, {nan, 0}});
+    CHECK(throws_as<std::invalid_argument>([&] { physics.step(world, 1); }));
+    world.get<Body>(bad)->acceleration = {};
+    world.find(bad)->position.y = nan;
+    CHECK(throws_as<std::invalid_argument>([&] { physics.step(world, 1); }));
+    CHECK(unchanged());
+
+    world.find(bad)->position.y = 0;
+    physics.step(world, 1);
+    CHECK(near(world.find(good)->position.x, 30));
+}
+
 } // namespace
 
 int main() {
@@ -144,5 +176,6 @@ int main() {
         test_settings_validation();
         test_registration_and_removal();
         test_step_integration();
+        test_invalid_components_rejected_before_mutation();
     });
 }

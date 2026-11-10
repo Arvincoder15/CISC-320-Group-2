@@ -89,10 +89,14 @@ public:
 
     // Advances every registered body by dt seconds (finite and nonnegative).
     // dt == 0 changes nothing. Bodies are updated in ascending entity-ID order.
+    // Throws std::invalid_argument, before changing any component, for a bad dt,
+    // a non-finite position/velocity/acceleration, or a collider whose size is not
+    // finite and positive or whose offset is not finite.
     void step(World& world, float dt);
 
 private:
     void prune(const World& world);
+    void validate_components(const World& world) const;
     void accelerate(Body& body, float dt) const;
 
     PhysicsSettings settings_;

@@ -12,6 +12,8 @@ namespace {
 // after a body is snapped flush against a solid (pixel coordinates up to ~10^4).
 constexpr float resolution_tolerance = 0.001F;
 
+bool finite(Vec2 v) { return std::isfinite(v.x) && std::isfinite(v.y); }
+
 } // namespace
 
 void integrate(Transform& transform, Body& body, float dt) {
@@ -67,6 +69,19 @@ void PhysicsSystem::prune(const World& world) {
     std::erase_if(tracked_, [&](EntityId id) { return !world.alive(id); });
 }
 
+void PhysicsSystem::validate_components(const World& world) const {
+    for (const auto id : tracked_) {
+        if (!finite(world.find(id)->position))
+            throw std::invalid_argument("Physics entity has a non-finite position");
+        if (const auto* body = world.get<Body>(id); body && (!finite(body->velocity) || !finite(body->acceleration)))
+            throw std::invalid_argument("Physics body has non-finite velocity or acceleration");
+        if (const auto* collider = world.get<Collider>(id); collider
+            && (!finite(collider->offset) || !std::isfinite(collider->size.x) || !std::isfinite(collider->size.y)
+                || collider->size.x <= 0 || collider->size.y <= 0))
+            throw std::invalid_argument("Physics collider needs a finite offset and a finite positive size");
+    }
+}
+
 void PhysicsSystem::accelerate(Body& body, float dt) const {
     body.velocity.x += (body.acceleration.x + settings_.gravity.x) * dt;
     body.velocity.y += (body.acceleration.y + settings_.gravity.y) * dt;
@@ -77,6 +92,8 @@ void PhysicsSystem::accelerate(Body& body, float dt) const {
 void PhysicsSystem::step(World& world, float dt) {
     if (!std::isfinite(dt) || dt < 0.0F) throw std::invalid_argument("dt must be finite and nonnegative");
     prune(world);
+    // Validate everything first so a bad component never leaves a half-stepped world.
+    validate_components(world);
     if (dt == 0) return;
     for (const auto id : tracked_) {
         auto* body = world.get<Body>(id);
