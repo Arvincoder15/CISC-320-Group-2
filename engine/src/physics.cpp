@@ -3,6 +3,13 @@
 #include <stdexcept>
 
 namespace engine {
+namespace {
+
+// Penetration smaller than this is treated as touching. It absorbs float rounding
+// after a body is snapped flush against a solid (pixel coordinates up to ~10^4).
+constexpr float resolution_tolerance = 0.001F;
+
+} // namespace
 
 void integrate(Transform& transform, Body& body, float dt) {
     if (!std::isfinite(dt) || dt < 0.0F) throw std::invalid_argument("dt must be finite and nonnegative");
@@ -24,6 +31,20 @@ Aabb bounds(const Transform& transform, const Collider& collider) {
 
 bool layers_interact(const Collider& a, const Collider& b) {
     return (a.layer & b.mask) != 0 && (b.layer & a.mask) != 0;
+}
+
+void validate(const PhysicsSettings& settings) {
+    if (!std::isfinite(settings.gravity.x) || !std::isfinite(settings.gravity.y))
+        throw std::invalid_argument("Physics gravity must be finite");
+    // Written as !(x > 0) so NaN is rejected; infinity is allowed (no limit).
+    if (!(settings.max_speed.x > 0) || !(settings.max_speed.y > 0))
+        throw std::invalid_argument("Physics speed limits must be positive");
+    if (!std::isfinite(settings.max_substep) || settings.max_substep <= 0)
+        throw std::invalid_argument("Physics max_substep must be finite and positive");
+    if (settings.max_substeps < 1)
+        throw std::invalid_argument("Physics max_substeps must be at least 1");
+    if (!std::isfinite(settings.contact_skin) || settings.contact_skin <= 2 * resolution_tolerance)
+        throw std::invalid_argument("Physics contact_skin must be finite and thicker than the resolution tolerance");
 }
 
 } // namespace engine

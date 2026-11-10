@@ -1,5 +1,6 @@
 #include "engine/physics.hpp"
 #include "test_support.hpp"
+#include <limits>
 
 using namespace engine;
 
@@ -37,11 +38,49 @@ void test_collider_bounds_and_layers() {
     CHECK(!layers_interact(Collider{{}, {1, 1}, layer_none}, b));
 }
 
+void test_settings_validation() {
+    validate(PhysicsSettings{}); // Defaults are valid.
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    const auto rejects = [](PhysicsSettings settings) {
+        return throws_as<std::invalid_argument>([&] { validate(settings); });
+    };
+    PhysicsSettings settings;
+    settings.gravity = {0, nan};
+    CHECK(rejects(settings));
+    settings = {};
+    settings.gravity = {inf, 0};
+    CHECK(rejects(settings));
+    settings = {};
+    settings.max_speed = {0, 100};
+    CHECK(rejects(settings));
+    settings = {};
+    settings.max_speed = {100, nan};
+    CHECK(rejects(settings));
+    settings = {};
+    settings.max_substep = 0;
+    CHECK(rejects(settings));
+    settings = {};
+    settings.max_substep = inf;
+    CHECK(rejects(settings));
+    settings = {};
+    settings.max_substeps = 0;
+    CHECK(rejects(settings));
+    settings = {};
+    settings.contact_skin = 0;
+    CHECK(rejects(settings));
+    settings = {};
+    settings.max_speed = {200, 600};
+    settings.gravity = {0, 900};
+    validate(settings);
+}
+
 } // namespace
 
 int main() {
     return run_test([] {
         test_integration_and_overlap();
         test_collider_bounds_and_layers();
+        test_settings_validation();
     });
 }

@@ -5,6 +5,7 @@
 #pragma once
 #include "engine/types.hpp"
 #include <cstdint>
+#include <limits>
 
 namespace engine {
 
@@ -41,5 +42,27 @@ struct Collider {
 Aabb bounds(const Transform& transform, const Collider& collider);
 // Two colliders interact only when each one's mask accepts the other's layer.
 bool layers_interact(const Collider& a, const Collider& b);
+
+// Movement policy shared by every body a PhysicsSystem steps.
+// - gravity (pixels/s^2) is added to each Body's own acceleration, so a game that
+//   already stores gravity in Body::acceleration should leave this at zero.
+// - max_speed clamps |velocity.x| and |velocity.y| after acceleration (terminal
+//   velocity). Infinity means unlimited.
+// - Steps longer than max_substep are split into equal substeps (at most
+//   max_substeps) to reduce tunnelling. The caller owns the fixed-step loop; the
+//   proposed default is one 1/60 s tick per call.
+// - contact_skin is how far below a body the grounded probe looks (pixels).
+struct PhysicsSettings {
+    Vec2 gravity{};
+    Vec2 max_speed{std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity()};
+    float max_substep{1.0F / 60.0F};
+    int max_substeps{8};
+    float contact_skin{0.01F};
+};
+
+// Throws std::invalid_argument for non-finite gravity, nonpositive or NaN speed
+// limits, nonpositive/non-finite max_substep, max_substeps < 1, or a contact skin
+// that is non-finite or too thin to detect resting contact.
+void validate(const PhysicsSettings& settings);
 
 } // namespace engine
