@@ -26,6 +26,9 @@ foreach(module IN ITEMS architecture rendering physics networking ai tools inter
     group2_target(engine_${module})
 endforeach()
 
+target_sources(engine_tools PRIVATE engine/src/tiled_importer.cpp)
+target_include_directories(engine_tools SYSTEM PRIVATE third_party/nlohmann_json/include)
+
 target_sources(engine_infrastructure PRIVATE engine/src/resource_files.cpp engine/src/configuration.cpp)
 target_include_directories(engine_infrastructure SYSTEM PRIVATE third_party/nlohmann_json/include)
 
@@ -43,6 +46,7 @@ target_link_libraries(infrastructure_demo PRIVATE engine_infrastructure)
 group2_target(infrastructure_demo)
 
 if(BUILD_TESTING)
+    configure_file(tests/fixtures/tiled_level.json fixtures/tiled_level.json COPYONLY)
     foreach(suite IN ITEMS architecture rendering physics networking ai tools interaction infrastructure resource_files configuration gameplay integration)
         add_executable(test_${suite} tests/${suite}_test.cpp)
         target_include_directories(test_${suite} PRIVATE tests)
