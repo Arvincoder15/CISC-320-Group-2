@@ -47,11 +47,12 @@ int main()
                             world.add<Health>(enemy, Health{100});
                             world.add<Position>(enemy, Position{3.0});
 
-                            CHECK(world.count<Health>() == 2); //Should probably be 1, need to double check this later
+                            CHECK(world.count<Health>() == 2); // One component per entity = 2 total
                             CHECK(world.count<Position>() == 2);
 
                             world.destroy(player);
-                            //CHECK(world.get(player) == nullptr);
+                            CHECK(world.get<Health>(player) == nullptr);
+                            CHECK(world.count<Health>() == 1);
                         }; }
 
     );
