@@ -2,6 +2,8 @@
 #include "engine/resource_files.hpp"
 #include <nlohmann/json.hpp>
 #include <cmath>
+#include <chrono>
+#include <fstream>
 #include <initializer_list>
 #include <string>
 
@@ -38,6 +40,32 @@ void known_fields(const Json& object, std::initializer_list<std::string_view> al
         require(known, std::string(prefix) + "." + key + " is not a supported setting");
     }
 }
+// An exclusively created sibling directory owns the temporary file. Keeping it
+// beside the destination allows rename without crossing filesystem boundaries.
+class PendingSettings {
+public:
+    explicit PendingSettings(const std::filesystem::path& parent) {
+        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+        for (int attempt = 0; attempt < 100; ++attempt) {
+            const auto candidate = parent / (".engine-settings-" + std::to_string(stamp)
+                                             + "-" + std::to_string(attempt));
+            if (std::filesystem::create_directory(candidate)) {
+                directory = candidate;
+                return;
+            }
+        }
+        throw ConfigurationError("Unable to create temporary settings directory");
+    }
+    ~PendingSettings() {
+        std::error_code ignored;
+        std::filesystem::remove_all(directory, ignored);
+    }
+    PendingSettings(const PendingSettings&) = delete;
+    PendingSettings& operator=(const PendingSettings&) = delete;
+    std::filesystem::path file() const { return directory / "settings.json"; }
+private:
+    std::filesystem::path directory;
+};
 }
 EngineSettings parse_engine_settings(std::string_view text, std::string_view source) {
     try {
@@ -67,6 +95,111 @@ EngineSettings parse_engine_settings(std::string_view text, std::string_view sou
     } catch (const ConfigurationError& error) {
         throw ConfigurationError("Configuration '" + std::string(source) + "': " + error.what());
     }
+}
+std::string serialize_engine_settings(const EngineSettings& settings) {
+    require(settings.window.width >= 1 && settings.window.width <= 16384,
+            "window.width must be in [1, 16384]");
+    require(settings.window.height >= 1 && settings.window.height <= 16384,
+            "window.height must be in [1, 16384]");
+    require(std::isfinite(settings.audio.master_volume)
+            && settings.audio.master_volume >= 0 && settings.audio.master_volume <= 1,
+            "audio.master_volume must be finite and in [0, 1]");
+    const Json document = {
+        {"schema_version", 1},
+        {"window", {{"width", settings.window.width}, {"height", settings.window.height},
+                    {"fullscreen", settings.window.fullscreen}}},
+        {"audio", {{"master_volume", settings.audio.master_volume},
+                   {"sound_effects", settings.audio.sound_effects}}}
+    };
+    return document.dump(2) + '\n';
+}
+void save_engine_settings(const std::filesystem::path& path, const EngineSettings& settings) {
+    try {
+        // Validate before touching the filesystem.
+        const auto updated = Json::parse(serialize_engine_settings(settings));
+        require(!path.empty() && path.has_filename(), "a settings filename is required");
+        const auto destination = std::filesystem::absolute(path);
+        const auto parent = destination.parent_path();
+        std::error_code error;
+        const auto status = std::filesystem::symlink_status(destination, error);
+        if (error && error != std::errc::no_such_file_or_directory)
+            throw std::filesystem::filesystem_error("Cannot inspect destination", destination, error);
+        require(status.type() == std::filesystem::file_type::not_found
+                || std::filesystem::is_regular_file(status),
+                "destination must be a regular file, not a symlink or directory");
+        Json document = updated;
+        if (std::filesystem::exists(status)) {
+            FileResourceManager files(parent);
+            const auto existing = files.load(destination.filename());
+            const std::string text(existing->bytes.begin(), existing->bytes.end());
+            // Do not silently overwrite corrupt or unsupported configurations.
+            (void)parse_engine_settings(text, destination.generic_string());
+            document = Json::parse(text);
+            document["window"] = updated.at("window");
+            document["audio"] = updated.at("audio");
+        }
+        const auto text = document.dump(2) + '\n';
+        PendingSettings pending(parent);
+        std::ofstream output(pending.file(), std::ios::binary | std::ios::trunc);
+        output.write(text.data(), static_cast<std::streamsize>(text.size()));
+        output.close();
+        require(static_cast<bool>(output), "failed to write or close temporary settings file");
+        // Never delete the old file first. If replacement fails, it stays intact.
+        std::filesystem::rename(pending.file(), destination);
+    } catch (const ConfigurationError& error) {
+        throw ConfigurationError("Cannot save settings '" + path.generic_string() + "': " + error.what());
+    } catch (const ResourceError& error) {
+        throw ConfigurationError("Cannot save settings '" + path.generic_string() + "': " + error.what());
+    } catch (const std::filesystem::filesystem_error& error) {
+        throw ConfigurationError("Cannot save settings '" + path.generic_string() + "': " + error.what());
+    } catch (const Json::exception& error) {
+        throw ConfigurationError("Cannot save settings '" + path.generic_string() + "': " + error.what());
+    }
+}
+SettingsLoadResult load_user_settings(const std::filesystem::path& path, const EngineSettings& defaults) {
+    (void)serialize_engine_settings(defaults);
+    SettingsLoadResult result{defaults, SettingsLoadStatus::failed, {}};
+    try {
+        require(!path.empty() && path.has_filename(), "a settings filename is required");
+        const auto destination = std::filesystem::absolute(path);
+        std::error_code error;
+        const auto status = std::filesystem::symlink_status(destination, error);
+        if (error && error != std::errc::no_such_file_or_directory)
+            throw std::filesystem::filesystem_error("Cannot inspect settings", destination, error);
+        if (status.type() == std::filesystem::file_type::not_found) {
+            // Windows can report ENOENT for "existing-file/settings.json",
+            // whereas POSIX reports ENOTDIR. Only a missing path under a
+            // directory qualifies as a normal first launch.
+            for (auto parent = destination.parent_path(); !parent.empty();) {
+                const auto parent_status = std::filesystem::status(parent, error);
+                if (error && error != std::errc::no_such_file_or_directory)
+                    throw std::filesystem::filesystem_error("Cannot inspect settings parent", parent, error);
+                if (std::filesystem::exists(parent_status)) {
+                    require(std::filesystem::is_directory(parent_status),
+                            "settings parent must be a directory: " + parent.generic_string());
+                    break;
+                }
+                const auto next = parent.parent_path();
+                if (next == parent) break;
+                parent = next;
+            }
+            result.status = SettingsLoadStatus::missing;
+            return result;
+        }
+        require(std::filesystem::is_regular_file(status),
+                "settings must be a regular file, not a symlink or directory");
+        result.settings = load_engine_settings(destination.parent_path(), destination.filename());
+        result.status = SettingsLoadStatus::loaded;
+        return result;
+    } catch (const ConfigurationError& error) {
+        result.diagnostic = error.what();
+    } catch (const ResourceError& error) {
+        result.diagnostic = error.what();
+    } catch (const std::filesystem::filesystem_error& error) {
+        result.diagnostic = error.what();
+    }
+    result.diagnostic = "Cannot load user settings '" + path.generic_string() + "': " + result.diagnostic;
+    return result;
 }
 EngineSettings load_engine_settings(const std::filesystem::path& root, const std::filesystem::path& key) {
     FileResourceManager files(root); // Fresh read; no stale configuration cache on reload.
