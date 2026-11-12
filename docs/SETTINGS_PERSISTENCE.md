@@ -1,4 +1,4 @@
-# Settings persistence — step 2
+# Settings persistence — step 3
 
 Branch: `feature/arvin-settings-persistence`, based on the merged infrastructure work.
 
@@ -54,10 +54,46 @@ invalid settings leaving original bytes untouched, corrupt/unsupported documents
 missing parent directories, rejected directory/symlink destinations, and temporary
 file cleanup. Disk-full and interrupted-write failures are not fault-injected.
 
-## Next small steps
+## Startup loading
 
-1. Agree on the writable user-settings location with Rohan.
-2. Load that file on startup, using defaults on first launch and reporting errors.
-3. Connect the settings screen's Apply action to saving and live window/audio changes.
+`load_user_settings(path, defaults)` returns a `SettingsLoadResult` containing a
+complete settings value, a status (`loaded`, `missing`, or `failed`) and a diagnostic.
+Missing files, including a missing first-launch folder, use the supplied defaults
+without writing anything. Invalid JSON, unsupported schemas, invalid values and
+file-access failures also use defaults, with a diagnostic the caller should report.
+The rejected file is preserved. Invalid caller-provided defaults throw
+`ConfigurationError` because they indicate a programming/configuration mistake.
+Symlink and directory destinations are rejected consistently with saving.
 
-No startup integration or settings-screen integration is implemented yet.
+```cpp
+const auto startup = engine::load_user_settings(user_settings_directory / "settings.json");
+const auto settings = startup.settings;
+if (startup.status == engine::SettingsLoadStatus::failed) {
+    logger.write(engine::LogLevel::warning, "configuration", startup.diagnostic);
+}
+```
+
+The infrastructure demo accepts an optional path to exercise startup behavior:
+
+```sh
+./build/infrastructure_demo assets /path/to/user-settings/settings.json
+```
+
+It uses the packaged example configuration as defaults, then loads the optional
+user file and reports the resulting settings. The demo does not automatically save.
+Tests exercise missing folders, successful loading, malformed/schema/value errors,
+directory/symlink rejection, invalid defaults, and preservation of rejected files.
+
+## Integration handoff
+
+1. Agree on the writable user-settings location with Rohan. The engine accepts an
+   application-supplied path so it does not hardcode an operating-system folder.
+2. Call the startup helper from the graphical application's initialization and
+   apply the returned values to its actual window and audio device.
+3. Connect Apply to saving and live window/audio changes. Create the writable
+   parent folder before the first save, report save failures, and allow the user
+   to repair/reset corrupt saved settings explicitly.
+
+The startup policy is implemented and demonstrated; graphical application and
+settings-screen integration remain pending. Main's latest ECS, AI and physics
+changes have been merged into this branch without conflicts.

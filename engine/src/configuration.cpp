@@ -156,6 +156,35 @@ void save_engine_settings(const std::filesystem::path& path, const EngineSetting
         throw ConfigurationError("Cannot save settings '" + path.generic_string() + "': " + error.what());
     }
 }
+SettingsLoadResult load_user_settings(const std::filesystem::path& path, const EngineSettings& defaults) {
+    (void)serialize_engine_settings(defaults);
+    SettingsLoadResult result{defaults, SettingsLoadStatus::failed, {}};
+    try {
+        require(!path.empty() && path.has_filename(), "a settings filename is required");
+        const auto destination = std::filesystem::absolute(path);
+        std::error_code error;
+        const auto status = std::filesystem::symlink_status(destination, error);
+        if (error && error != std::errc::no_such_file_or_directory)
+            throw std::filesystem::filesystem_error("Cannot inspect settings", destination, error);
+        if (status.type() == std::filesystem::file_type::not_found) {
+            result.status = SettingsLoadStatus::missing;
+            return result;
+        }
+        require(std::filesystem::is_regular_file(status),
+                "settings must be a regular file, not a symlink or directory");
+        result.settings = load_engine_settings(destination.parent_path(), destination.filename());
+        result.status = SettingsLoadStatus::loaded;
+        return result;
+    } catch (const ConfigurationError& error) {
+        result.diagnostic = error.what();
+    } catch (const ResourceError& error) {
+        result.diagnostic = error.what();
+    } catch (const std::filesystem::filesystem_error& error) {
+        result.diagnostic = error.what();
+    }
+    result.diagnostic = "Cannot load user settings '" + path.generic_string() + "': " + result.diagnostic;
+    return result;
+}
 EngineSettings load_engine_settings(const std::filesystem::path& root, const std::filesystem::path& key) {
     FileResourceManager files(root); // Fresh read; no stale configuration cache on reload.
     const auto file = files.load(key);

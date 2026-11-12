@@ -117,4 +117,33 @@ int main() { return run_test([] {
     }
     for (const auto& entry : fs::directory_iterator(directory.path))
         CHECK(entry.path().filename().string().find(".engine-settings-") != 0);
+
+    // Startup distinguishes a normal first launch from a rejected saved file.
+    const auto first_launch = directory.path / "new-user" / "settings.json";
+    const auto missing = engine::load_user_settings(first_launch, full);
+    CHECK(missing.status == engine::SettingsLoadStatus::missing && missing.diagnostic.empty());
+    CHECK(missing.settings.window.width == full.window.width);
+    CHECK(near(missing.settings.audio.master_volume, full.audio.master_volume));
+    CHECK(!fs::exists(first_launch.parent_path()));
+    const auto loaded = engine::load_user_settings(persisted);
+    CHECK(loaded.status == engine::SettingsLoadStatus::loaded && loaded.diagnostic.empty());
+    CHECK(loaded.settings.window.fullscreen && !loaded.settings.audio.sound_effects);
+    CHECK(loaded.settings.window.width == full.window.width && loaded.settings.window.height == full.window.height);
+    CHECK(near(loaded.settings.audio.master_volume, full.audio.master_volume));
+    for (const std::string broken : {"{broken", R"({"schema_version":2})",
+                                     R"({"schema_version":1,"audio":{"master_volume":2}})"}) {
+        save(broken);
+        const auto rejected = engine::load_user_settings(file, full);
+        CHECK(rejected.status == engine::SettingsLoadStatus::failed);
+        CHECK(rejected.diagnostic.find("settings.json") != std::string::npos);
+        CHECK(rejected.settings.window.width == full.window.width);
+        CHECK(near(rejected.settings.audio.master_volume, full.audio.master_volume));
+        CHECK(read_text(file) == broken);
+    }
+    CHECK(engine::load_user_settings(directory.path).status == engine::SettingsLoadStatus::failed);
+    CHECK(engine::load_user_settings({}).status == engine::SettingsLoadStatus::failed);
+    CHECK(engine::load_user_settings(persisted / "settings.json").status == engine::SettingsLoadStatus::failed);
+    if (!link_error)
+        CHECK(engine::load_user_settings(link).status == engine::SettingsLoadStatus::failed);
+    CHECK(throws_as<engine::ConfigurationError>([&] { engine::load_user_settings(first_launch, invalid_settings); }));
 }); }
