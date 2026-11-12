@@ -4,10 +4,11 @@ Secondary responsibility: Software Developer/Architect.
 
 ## What is here
 
-LevelDocument validation is a neutral data model. It does not load Tiled or JSON.
+The neutral `LevelDocument` model supports validation and import of a documented Tiled JSON object-layer subset. It does not render tilemaps or create runtime entities.
 
 - Public code: `engine/include/engine/tools.hpp`
 - Implementation: `engine/src/tools.cpp`
+- Tiled JSON importer: `engine/include/engine/tiled_importer.hpp`, `engine/src/tiled_importer.cpp`
 - Example tests: `tests/tools_test.cpp`
 - Build: follow [SETUP](../SETUP.md).
 - Run your tests: `ctest --test-dir build -C Debug -R '^tools$' --output-on-failure` (use double quotes in Windows shells).
@@ -23,6 +24,8 @@ Your reusable subsystem should expose a small interface other teammates can test
 2. **Developer inspection panel** — Integrate approved Dear ImGui backend with Aryaman; show entities, timing and cache counts without owning those services. Proposed effort: 6 hours.
 
 3. **Level round-trip and reload** — Save/load supported editable fields; test invalid data and ensure failed reload leaves the current level usable. Proposed effort: 6 hours.
+
+The initial importer accepts finite orthogonal maps and top-level object layers. It maps rectangle objects, `class`/legacy `type`, spawn prefab properties, and `parent_id`/`linked_id` references into `LevelDocument`; malformed or unsupported object properties/shapes fail explicitly. Tile layers, tileset resolution/rendering, infinite maps, and runtime entity creation are not part of this importer increment.
 
 ## Coordinate with
 

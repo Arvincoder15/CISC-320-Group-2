@@ -1,0 +1,116 @@
+{
+  "type": "map",
+  "name": "Cooperative Puzzle Room",
+  "version": "1.10",
+  "orientation": "orthogonal",
+  "renderorder": "right-down",
+  "width": 40,
+  "height": 24,
+  "tilewidth": 32,
+  "tileheight": 32,
+  "infinite": false,
+  "layers": [
+    {
+      "id": 1,
+      "name": "Terrain",
+      "type": "tilelayer",
+      "width": 40,
+      "height": 24,
+      "data": []
+    },
+    {
+      "id": 2,
+      "name": "Gameplay",
+      "type": "objectgroup",
+      "objects": [
+        {
+          "id": 101,
+          "name": "Fire player start",
+          "class": "player_spawn",
+          "x": 64,
+          "y": 704,
+          "width": 16,
+          "height": 16,
+          "properties": [
+            {"name": "prefab", "type": "string", "value": "fire_player"}
+          ]
+        },
+        {
+          "id": 102,
+          "name": "Water player start",
+          "type": "player_spawn",
+          "x": 96,
+          "y": 704,
+          "width": 16,
+          "height": 16,
+          "properties": [
+            {"name": "prefab", "type": "string", "value": "water_player"}
+          ]
+        },
+        {
+          "id": 201,
+          "name": "Solid platform",
+          "class": "platform",
+          "x": 0,
+          "y": 720,
+          "width": 1280,
+          "height": 32
+        },
+        {
+          "id": 202,
+          "name": "Lava hazard",
+          "class": "hazard",
+          "x": 320,
+          "y": 688,
+          "width": 128,
+          "height": 32
+        },
+        {
+          "id": 203,
+          "name": "Door switch",
+          "class": "pressure_plate",
+          "x": 512,
+          "y": 704,
+          "width": 32,
+          "height": 16,
+          "properties": [
+            {"name": "linked_id", "type": "object", "value": 204}
+          ]
+        },
+        {
+          "id": 204,
+          "name": "Linked door",
+          "class": "door",
+          "x": 768,
+          "y": 608,
+          "width": 32,
+          "height": 112
+        },
+        {
+          "id": 205,
+          "name": "Fire exit",
+          "class": "exit",
+          "x": 1120,
+          "y": 656,
+          "width": 32,
+          "height": 64,
+          "properties": [
+            {"name": "prefab", "type": "string", "value": "fire_exit"}
+          ]
+        },
+        {
+          "id": 206,
+          "name": "Water exit",
+          "class": "exit",
+          "x": 1184,
+          "y": 656,
+          "width": 32,
+          "height": 64,
+          "properties": [
+            {"name": "prefab", "type": "string", "value": "water_exit"}
+          ]
+        }
+      ]
+    }
+  ]
+}
