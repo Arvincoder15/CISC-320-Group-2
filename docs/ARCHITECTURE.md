@@ -26,8 +26,8 @@ Public engine headers never include `elemental_coop/` headers. The application c
 | Entity identity | Unsigned 64-bit ID, zero invalid, no reuse in starter; remote ID mapping TBD | Sydney / Henry |
 | World lifetime | Game owns World; `find` borrows a pointer until entity deletion or world destruction; missing ID returns null | Sydney / all owners |
 | Input | One buffer per player; held movement persists, jump/quit pulses clear after consumption; OS codes stay in the adapter | Rohan / Blake |
-| Movement | Semi-implicit Euler; dt must be finite and nonnegative; initial body values supplied by caller | D'Artagnan / Blake |
-| Collision | AABB overlap excludes touching edges; no response/events yet | D'Artagnan / Blake |
+| Movement | Semi-implicit Euler; dt must be finite and nonnegative; initial body values supplied by caller. `PhysicsSystem` adds global gravity (px/s², default 0) to each `Body` acceleration, clamps per-axis speed, and splits steps longer than 1/60 s into at most 8 equal substeps; the caller owns the fixed-step loop | D'Artagnan / Blake, Sydney |
+| Collision | AABB overlap excludes touching edges. `Body` + solid `Collider` entities stop against static colliders (no `Body`) whose layer/mask bits interact; moving bodies do not block each other. Physics writes a `ContactState` component (grounded, supporting entity, ceiling, walls) for each moving body, adding it if missing. Triggers never block and emit enter/stay/leave events in (body, trigger) ID order; `reset()` drops contacts after a restart. Discrete tests only: fast bodies can tunnel (see `physics.hpp`) | D'Artagnan / Blake, Sydney, Rocco |
 | Drawing | Renderer borrows commands during `draw`; recording backend copies them | Aryaman / application |
 | Network | In-memory snapshot of tick, entity and position; bounded FIFO double; send false means queue full | Henry / application |
 | AI | Position and patrol bounds in, persistent left/right direction out; optional hazard/NPC adapter | Rocco / Blake |
@@ -45,7 +45,7 @@ Rohan and Aryaman must select **one** event-polling owner; events are forwarded 
 
 ## Update order
 
-The demo calls a fixed 1/60-second tick 120 times for two characters, without a real-time accumulator. It resolves only a temporary flat floor; a real platform solver remains D'Artagnan's task. Proposed application loop: poll OS/network events, buffer actions, consume actions and update AI/gameplay, integrate physics, resolve contacts/game rules, capture authoritative snapshots, then render and draw tools. SDL timing, collision events, packet authority, and the accumulator remain tasks; do not assume the demo implements them.
+The demo calls a fixed 1/60-second tick 120 times for two characters, without a real-time accumulator. It still resolves only a temporary flat floor: `engine::PhysicsSystem` now provides floor/wall/ceiling resolution, grounded state and trigger events, but `elemental_coop` has not been switched over to it yet. Proposed application loop: poll OS/network events, buffer actions, consume actions and update AI/gameplay, integrate physics, resolve contacts/game rules, capture authoritative snapshots, then render and draw tools. SDL timing, connecting collision events to game rules, packet authority, and the accumulator remain tasks; do not assume the demo implements them.
 
 Network protocol work must define explicit field encoding, byte order, bounds, protocol version, ownership, stale-packet policy and ID mapping. Never transmit the memory representation of `StateSnapshot`.
 
@@ -57,6 +57,6 @@ Rohan input → Blake action handling → D'Artagnan movement → Sydney transfo
 
 `PlayerInputs` is an array of two action frames. Slots are stable: 0 is fire, 1 is water. Each frame has held `move_x` and one-shot `primary_pressed` (jump) / `quit_requested`. `Game` owns both player entities and body state; the public world is read-only. Invalid input is rejected before either player moves. Restart retains both entity IDs and resets motion, life and exit state; future puzzle components must also reset.
 
-After each positive-duration tick, a future collision adapter must report hazards first, then both matching-exit contacts. Tick clears exit contacts; reporting both prevents an old contact from winning a later frame. Loss and win stop movement until restart; either player can request quit. The hazard/exit functions are manual integration seams, not automatic collision detection. Elemental rules and tuning remain reviewable examples.
+After each positive-duration tick, a future collision adapter (reading `PhysicsSystem::events()`) must report hazards first, then both matching-exit contacts. Tick clears exit contacts; reporting both prevents an old contact from winning a later frame. Loss and win stop movement until restart; either player can request quit. The hazard/exit functions are manual integration seams, not automatic collision detection. Elemental rules and tuning remain reviewable examples.
 
 `StateSnapshot` still represents only one entity position. Send one per player for starter tests. It is insufficient for a complete cooperative session: Henry must add player-slot ownership, round generation, velocities, death/grounded flags, puzzle object states and agreed win/restart authority before actual networking. No wire protocol is selected here.

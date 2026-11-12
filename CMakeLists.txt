@@ -25,6 +25,8 @@ foreach(module IN ITEMS architecture rendering physics networking ai tools inter
     target_link_libraries(engine_${module} PUBLIC engine_core)
     group2_target(engine_${module})
 endforeach()
+# PhysicsSystem reads Body/Collider components from the World.
+target_link_libraries(engine_physics PUBLIC engine_architecture)
 
 target_sources(engine_infrastructure PRIVATE engine/src/resource_files.cpp engine/src/configuration.cpp)
 target_include_directories(engine_infrastructure SYSTEM PRIVATE third_party/nlohmann_json/include)
@@ -41,6 +43,10 @@ group2_target(engine_demo)
 add_executable(infrastructure_demo apps/infrastructure_demo.cpp)
 target_link_libraries(infrastructure_demo PRIVATE engine_infrastructure)
 group2_target(infrastructure_demo)
+
+add_executable(ai_demo apps/ai_demo.cpp)
+target_link_libraries(ai_demo PRIVATE engine_ai)
+group2_target(ai_demo)
 
 if(BUILD_TESTING)
     foreach(suite IN ITEMS architecture rendering physics networking ai tools interaction infrastructure resource_files configuration gameplay integration)
