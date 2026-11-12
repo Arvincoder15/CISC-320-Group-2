@@ -60,7 +60,7 @@ try {
 }
 ```
 
-Each `load_engine_settings` call reads fresh bytes. `parse_engine_settings` accepts JSON text directly for unit tests or other file providers. File failures throw `ResourceError`; JSON/schema failures throw `ConfigurationError` with source/field context. This module neither changes an SDL window/audio device nor saves settings to disk.
+Each `load_engine_settings` call reads fresh bytes. `parse_engine_settings` accepts JSON text directly for unit tests or other file providers. File failures throw `ResourceError`; JSON/schema failures throw `ConfigurationError` with source/field context. The module does not change an SDL window/audio device. The settings persistence branch adds validated file saving; see [Settings persistence](SETTINGS_PERSISTENCE.md) for its API and limitations.
 
 The parser is pinned nlohmann/json 3.12.0, included under `third_party/nlohmann_json` with its MIT license and source hashes. Its include directory is private to the infrastructure target; public engine interfaces do not expose JSON-library types. This dependency choice is recorded for team review; no configure-time download is required.
 
@@ -101,4 +101,4 @@ Verification on November 5, 2026: Apple Clang 15.0.0 / C++20, CMake 4.4.4, all 1
 - Sydney + Arvin: define asset references on components; deleting one entity must not invalidate another entity's shared resource.
 - Team: finalize C++ standard and GoogleTest/Catch2 choice. Existing CTest runner remains functional; no framework migration is claimed.
 
-Resource/file services remain main-thread-only. Advanced profiling, background loading, settings saving and real SDL resource integration are subsequent tasks. The current game continues using its existing settings until its owner integrates these services.
+Resource/file services remain main-thread-only. Advanced profiling, background loading, settings-screen integration and real SDL resource integration are subsequent tasks. The current game continues using its existing settings until its owner integrates these services.
