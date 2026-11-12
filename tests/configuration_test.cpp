@@ -143,6 +143,11 @@ int main() { return run_test([] {
     CHECK(engine::load_user_settings(directory.path).status == engine::SettingsLoadStatus::failed);
     CHECK(engine::load_user_settings({}).status == engine::SettingsLoadStatus::failed);
     CHECK(engine::load_user_settings(persisted / "settings.json").status == engine::SettingsLoadStatus::failed);
+    const auto blocked = engine::load_user_settings(persisted / "missing-folder" / "settings.json", full);
+    CHECK(blocked.status == engine::SettingsLoadStatus::failed && !blocked.diagnostic.empty());
+    CHECK(blocked.settings.window.width == full.window.width);
+    CHECK(engine::load_user_settings(directory.path / "missing-a" / "missing-b" / "settings.json").status
+          == engine::SettingsLoadStatus::missing);
     if (!link_error)
         CHECK(engine::load_user_settings(link).status == engine::SettingsLoadStatus::failed);
     CHECK(throws_as<engine::ConfigurationError>([&] { engine::load_user_settings(first_launch, invalid_settings); }));

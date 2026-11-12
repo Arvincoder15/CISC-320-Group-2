@@ -167,6 +167,22 @@ SettingsLoadResult load_user_settings(const std::filesystem::path& path, const E
         if (error && error != std::errc::no_such_file_or_directory)
             throw std::filesystem::filesystem_error("Cannot inspect settings", destination, error);
         if (status.type() == std::filesystem::file_type::not_found) {
+            // Windows can report ENOENT for "existing-file/settings.json",
+            // whereas POSIX reports ENOTDIR. Only a missing path under a
+            // directory qualifies as a normal first launch.
+            for (auto parent = destination.parent_path(); !parent.empty();) {
+                const auto parent_status = std::filesystem::status(parent, error);
+                if (error && error != std::errc::no_such_file_or_directory)
+                    throw std::filesystem::filesystem_error("Cannot inspect settings parent", parent, error);
+                if (std::filesystem::exists(parent_status)) {
+                    require(std::filesystem::is_directory(parent_status),
+                            "settings parent must be a directory: " + parent.generic_string());
+                    break;
+                }
+                const auto next = parent.parent_path();
+                if (next == parent) break;
+                parent = next;
+            }
             result.status = SettingsLoadStatus::missing;
             return result;
         }
