@@ -4,7 +4,7 @@ Secondary responsibility: Software Developer/Architect.
 
 ## What is here
 
-The neutral `LevelDocument` model supports validation and import of a documented Tiled JSON object-layer subset. It does not render tilemaps or create runtime entities.
+The neutral `LevelDocument` model supports validation, Tiled JSON object-layer import, and versioned native JSON save/load. It does not render tilemaps or create runtime entities.
 
 - Public code: `engine/include/engine/tools.hpp`
 - Implementation: `engine/src/tools.cpp`
@@ -26,6 +26,14 @@ Your reusable subsystem should expose a small interface other teammates can test
 3. **Level round-trip and reload** — Save/load supported editable fields; test invalid data and ensure failed reload leaves the current level usable. Proposed effort: 6 hours.
 
 The initial importer accepts finite orthogonal maps and top-level object layers. It maps rectangle objects, `class`/legacy `type`, spawn prefab properties, and `parent_id`/`linked_id` references into `LevelDocument`; malformed or unsupported object properties/shapes fail explicitly. Tile layers, tileset resolution/rendering, infinite maps, and runtime entity creation are not part of this importer increment.
+
+## Native level persistence
+
+`serialize_level_json` and `parse_level_json` use a native JSON document format identified by `"format": "cisc320.level-document"` and `schema_version: 1`. It is deliberately separate from Tiled JSON and from the proposed game-specific example under `assets/elemental_coop/levels/`. It round-trips the supported `LevelDocument` fields: name, pixel size, spawn IDs/prefabs/positions, and object IDs/types/prefabs/positions/sizes/parent and linked IDs. Unknown fields and unsupported versions are rejected.
+
+`save_level_file` validates and serializes before writing a sibling temporary file and renaming it into place. The parent directory must already exist; level paths must be regular files and cannot be symlinks. `load_level_file` reads a fresh file value and parses/validates it. `reload_level` loads a complete candidate before replacing the active document; parse, validation, or file errors leave the active value unchanged. `LevelDocumentError` reports format/validation problems; `LevelFileError` reports path/read/write failures.
+
+Tiled import remains a separate input path. Native persistence cannot preserve Tiled tile/GID data, layer metadata, object names, or unsupported custom properties because those are not represented in `LevelDocument`.
 
 ## Coordinate with
 
