@@ -3,6 +3,7 @@
 #include <SDL3/SDL_main.h>
 #include "engine/configuration.hpp"
 #include "engine/interaction.hpp"
+#include "engine/resource_files.hpp"
 #include "demo_level.hpp"
 #include "font_metrics.hpp"
 #include "demo_walkthrough.hpp"
@@ -32,9 +33,16 @@ struct SdlLifetime {
     ~SdlLifetime() { SDL_Quit(); }
 };
 
+std::filesystem::path asset_directory() {
+    const char* base = SDL_GetBasePath();
+    if (!base) throw std::runtime_error(std::string("Cannot locate prototype assets: ") + SDL_GetError());
+    return std::filesystem::path(base) / "assets";
+}
+
 class App {
 public:
-    explicit App(std::filesystem::path settings_path) : path_(std::move(settings_path)) {
+    explicit App(std::filesystem::path settings_path)
+        : assets_(asset_directory()), path_(std::move(settings_path)) {
         const auto startup = engine::load_user_settings(path_);
         settings_ = draft_ = startup.settings;
         if (startup.status == engine::SettingsLoadStatus::failed) {
@@ -77,6 +85,9 @@ public:
     // Uses actual event routing and rendering; no sockets or external GUI driver required.
     void smoke_test(const std::filesystem::path& captures) {
         const auto check = [](bool ok, const char* message) { if (!ok) throw std::runtime_error(message); };
+        check(assets_.size() == 1, "Startup cached the font atlas");
+        check(assets_.load("font.bmp") == assets_.load("./font.bmp") && assets_.size() == 1,
+              "Font requests reuse the cached atlas");
         draw(); click(640, 245); check(screen_ == Screen::play, "Local Play navigation");
         key(SDL_SCANCODE_D, true); key(SDL_SCANCODE_RIGHT, true);
         update(0.05F); check(position(0).x > 150 && position(1).x > 1130, "Independent keyboard movement");
@@ -116,6 +127,7 @@ private:
     Window window_{nullptr, SDL_DestroyWindow};
     Renderer renderer_{nullptr, SDL_DestroyRenderer};
     Audio audio_{nullptr, SDL_DestroyAudioStream};
+    engine::FileResourceManager assets_;
     std::filesystem::path path_;
     engine::EngineSettings settings_{}, draft_{};
     prototype::DemoLevel game_;
@@ -140,9 +152,15 @@ private:
         color(c); SDL_FRect box{x,y,w,h}; SDL_RenderFillRect(renderer_.get(), &box);
     }
     void load_font() {
-        const auto file=std::filesystem::path(SDL_GetBasePath())/"assets"/"font.bmp";
-        std::unique_ptr<SDL_Surface,decltype(&SDL_DestroySurface)> source(SDL_LoadBMP(file.string().c_str()),SDL_DestroySurface);
-        if(!source) throw std::runtime_error("Missing font asset: "+file.string());
+        const auto atlas = assets_.load("font.bmp");
+        SDL_IOStream* stream = SDL_IOFromConstMem(atlas->bytes.data(), atlas->bytes.size());
+        if (!stream)
+            throw std::runtime_error("Cannot open font atlas '" + atlas->source.string() + "': " + SDL_GetError());
+        // SDL closes the stream after decoding. The atlas handle keeps its bytes alive until then.
+        std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)> source(
+            SDL_LoadBMP_IO(stream, true), SDL_DestroySurface);
+        if (!source)
+            throw std::runtime_error("Cannot decode font atlas '" + atlas->source.string() + "': " + SDL_GetError());
         std::unique_ptr<SDL_Surface,decltype(&SDL_DestroySurface)> rgba(SDL_ConvertSurface(source.get(),SDL_PIXELFORMAT_RGBA32),SDL_DestroySurface);
         if(!rgba) throw std::runtime_error(SDL_GetError());
         auto* bytes=static_cast<Uint8*>(rgba->pixels);

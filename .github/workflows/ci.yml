@@ -50,4 +50,6 @@ jobs:
           SDL_AUDIODRIVER: dummy
         run: |
           ctest --test-dir build-ui --output-on-failure
-          ./build-ui/ui_prototype --smoke-test
+          prototype="${PWD}/build-ui/ui_prototype"
+          cd "${RUNNER_TEMP}"
+          "${prototype}" --smoke-test
