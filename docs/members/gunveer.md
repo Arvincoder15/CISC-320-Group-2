@@ -43,7 +43,29 @@ Tiled import remains a separate input path. Native persistence cannot preserve T
 
 For graphical integration, the host can retain a `LevelDocument`, call `inspect_level_document` when it changes, display the snapshot's spawns/objects/diagnostics, and keep the selected object's stable ID for `find_object`. Use the existing `load_level_file`, `save_level_file`, and transactional `reload_level` APIs for a detached document inspection session; display their errors without creating or replacing runtime entities. The host may pass available metrics and leave all unavailable values unset.
 
-The SDL3 Developer Tools screen is app-local under `apps/ui_prototype`; this backend intentionally does not modify that UI. That prototype currently has no Dear ImGui integration, and the shared renderer is only a draw-command interface. A future panel must use an owner-approved UI/event/backend integration and add `engine_tools` to the prototype's link dependencies if that target consumes the API. General live entity enumeration/component snapshots require an agreed Sydney-owned ECS interface; historical log display requires an agreed Arvin-owned logger sink because `Logger` currently writes only to a caller-provided stream. No UI, ECS, renderer, logger, resource-manager, dependency, or CMake changes are part of Stage A.
+The SDL3 Developer Tools screen is app-local under `apps/ui_prototype`. Stage B
+adds a separate Level Document view to that existing screen using its current SDL
+drawing and event helpers; no Dear ImGui or other GUI dependency is introduced.
+The app links `engine_tools` and loads the bundled
+`apps/ui_prototype/assets/inspector_sample.level.json` native-format example.
+
+The host retains a detached `LevelDocument`, calls
+`inspect_level_document` to refresh its `LevelInspectionSnapshot`, and uses
+`find_object` with the selected stable level-object ID to show properties.
+Document operations use `load_level_file`, `save_level_file`, and
+`reload_level`; a failed load/reload leaves the last displayed document intact.
+These operations do not create or replace ECS entities. The UI shows measured
+SDL frame timing/FPS and `World::size()`; resource-cache metrics remain N/A
+because this prototype has no cache-statistics interface. The live-player view
+remains separate from level-document objects.
+
+The UI prototype does not provide general ECS entity enumeration/component
+snapshots; those require an agreed Sydney-owned ECS interface. Historical log
+display requires an agreed Arvin-owned logger sink because `Logger` currently
+writes only to a caller-provided stream. Stage B does not modify those systems,
+the shared renderer, or the gameplay world. A future ImGui integration would
+need owner approval and explicit input-capture integration with the existing SDL
+event loop.
 
 ## Coordinate with
 
