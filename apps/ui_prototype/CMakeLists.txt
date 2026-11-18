@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(SDL3 3.2 CONFIG REQUIRED)
 add_subdirectory(../.. engine-build)
 add_executable(ui_prototype main.cpp)
-target_link_libraries(ui_prototype PRIVATE SDL3::SDL3 elemental_coop_game engine_infrastructure)
+target_link_libraries(ui_prototype PRIVATE SDL3::SDL3 elemental_coop_game engine_infrastructure engine_tools)
 group2_target(ui_prototype)
 add_custom_command(TARGET ui_prototype POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory

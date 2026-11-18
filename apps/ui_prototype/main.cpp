@@ -3,6 +3,7 @@
 #include <SDL3/SDL_main.h>
 #include "engine/configuration.hpp"
 #include "engine/interaction.hpp"
+#include "engine/tools.hpp"
 #include "engine/resource_files.hpp"
 #include "demo_level.hpp"
 #include "font_metrics.hpp"
@@ -11,10 +12,15 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <memory>
+#include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <vector>
 
 namespace {
@@ -65,6 +71,7 @@ public:
         load_font();
         SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_BLEND);
         reset_game();
+        initialize_level_inspector();
     }
     int run() {
         Uint64 previous = SDL_GetTicks();
@@ -72,8 +79,10 @@ public:
             SDL_Event event;
             while (SDL_PollEvent(&event)) handle(event);
             const auto now = SDL_GetTicks();
-            const float dt = std::min(static_cast<float>(now - previous) / 1000.0F, 0.05F);
+            const auto frame_time = now - previous;
             previous = now;
+            update_inspection_metrics(frame_time);
+            const float dt = std::min(static_cast<float>(frame_time) / 1000.0F, 0.05F);
             update(dt);
             draw();
             if (capture_) { screenshot(); capture_ = false; }
@@ -108,6 +117,7 @@ public:
         reset_game(); screen_ = Screen::play;
         prototype::verification::solve(game_); update(0.01F);
         check(screen_ == Screen::won, "Physical route reaches both exits");
+        exercise_inspector(check);
         if (!captures.empty()) {
             std::filesystem::create_directories(captures);
             SDL_SetWindowSize(window_.get(), 1920, 1080);
@@ -120,8 +130,12 @@ public:
                 save_frame(captures / (std::string(names[i])+".bmp"));
                 SDL_RenderPresent(renderer_.get());
             }
+            tools_tab_ = ToolsTab::level_document;
+            screen_ = Screen::tools; draw();
+            save_frame(captures / "09-level-document-inspector.bmp");
+            SDL_RenderPresent(renderer_.get());
         }
-        std::cout << "UI smoke checks passed: keyboard, focus, navigation, settings, loss and win.\n";
+        std::cout << "UI smoke checks passed: keyboard, focus, navigation, settings, loss, win, and level inspection.\n";
     }
 private:
     Window window_{nullptr, SDL_DestroyWindow};
@@ -131,22 +145,258 @@ private:
     std::filesystem::path path_;
     engine::EngineSettings settings_{}, draft_{};
     prototype::DemoLevel game_;
+    std::optional<engine::LevelDocument> inspection_document_;
+    std::optional<engine::LevelInspectionSnapshot> inspection_snapshot_;
+    engine::InspectionMetrics inspection_metrics_{};
+    std::filesystem::path sample_level_path_;
     std::unique_ptr<SDL_Texture,decltype(&SDL_DestroyTexture)> font_{nullptr,SDL_DestroyTexture};
     float elapsed_{0};
     std::array<engine::PlayerInput,2> inputs_{};
     Screen screen_{Screen::menu}, previous_{Screen::menu}, tools_return_{Screen::menu};
+    enum class ToolsTab { live_entities, level_document };
+    ToolsTab tools_tab_{ToolsTab::live_entities};
     bool running_{true}, controls_{false}, capture_{false}, address_active_{false};
+    bool level_path_active_{false}, level_status_error_{false};
     float mx_{-1}, my_{-1};
     int focus_{0}, selected_{0};
-    std::string notice_, address_{"127.0.0.1"};
+    std::string notice_, address_{"127.0.0.1"}, level_path_, level_status_, selected_object_id_;
+    std::size_t object_page_{0};
     std::vector<Button> buttons_;
     engine::Vec2 position(std::size_t i) const { return game_.world().find(game_.player(i).entity)->position; }
     void clear_input() { for (auto& p : inputs_) p.clear(); }
     void go(Screen next) {
         clear_input(); screen_ = next; focus_ = 0; controls_ = false;
-        address_active_ = false; SDL_StopTextInput(window_.get());
+        address_active_ = false; level_path_active_ = false; SDL_StopTextInput(window_.get());
     }
     void reset_game() { clear_input(); game_.restart(); }
+    void update_inspection_metrics(Uint64 frame_time_ms) {
+        inspection_metrics_.runtime_entity_count = game_.world().size();
+        inspection_metrics_.cached_resource_count = assets_.size();
+        if (frame_time_ms == 0) {
+            inspection_metrics_.fps.reset();
+            inspection_metrics_.frame_time_ms.reset();
+            return;
+        }
+        inspection_metrics_.frame_time_ms = static_cast<double>(frame_time_ms);
+        inspection_metrics_.fps = 1000.0 / static_cast<double>(frame_time_ms);
+    }
+    void set_level_status(std::string message, bool is_error = false) {
+        level_status_ = std::move(message);
+        level_status_error_ = is_error;
+        if (is_error) {
+            std::cerr << "Level inspector: " << level_status_ << '\n';
+        }
+    }
+    void install_inspection_document(engine::LevelDocument document) {
+        auto snapshot = engine::inspect_level_document(document);
+        std::string next_selection = selected_object_id_;
+        if (snapshot.find_object(next_selection) == nullptr) {
+            next_selection.clear();
+            for (const auto& object : snapshot.objects) {
+                if (snapshot.find_object(object.id) != nullptr) {
+                    next_selection = object.id;
+                    break;
+                }
+            }
+        }
+        inspection_document_ = std::move(document);
+        inspection_snapshot_ = std::move(snapshot);
+        selected_object_id_ = std::move(next_selection);
+        object_page_ = 0;
+    }
+    void initialize_level_inspector() {
+        const char* base_path = SDL_GetBasePath();
+        if (base_path == nullptr) {
+            set_level_status("Could not locate the packaged inspector sample.", true);
+            return;
+        }
+        sample_level_path_ = std::filesystem::path(base_path) / "assets" / "inspector_sample.level.json";
+        level_path_ = sample_level_path_.string();
+        try {
+            auto document = engine::load_level_file(sample_level_path_);
+            install_inspection_document(std::move(document));
+            set_level_status("Loaded the bundled sample. Change the path before saving it.");
+        } catch (const engine::LevelDocumentError& error) {
+            set_level_status(error.what(), true);
+        } catch (const engine::LevelFileError& error) {
+            set_level_status(error.what(), true);
+        }
+    }
+    void load_inspection_document() {
+        try {
+            auto document = engine::load_level_file(std::filesystem::path(level_path_));
+            install_inspection_document(std::move(document));
+            set_level_status("Level document loaded.");
+        } catch (const engine::LevelDocumentError& error) {
+            set_level_status(error.what(), true);
+        } catch (const engine::LevelFileError& error) {
+            set_level_status(error.what(), true);
+        }
+    }
+    bool save_path_is_sample() const {
+        if (sample_level_path_.empty() || level_path_.empty()) {
+            return false;
+        }
+        std::error_code error;
+        const auto sample = std::filesystem::weakly_canonical(sample_level_path_, error);
+        if (error) {
+            return false;
+        }
+        const auto target = std::filesystem::weakly_canonical(std::filesystem::path(level_path_), error);
+        return !error && target == sample;
+    }
+    void save_inspection_document() {
+        if (!inspection_document_) {
+            set_level_status("Load a level document before saving.", true);
+            return;
+        }
+        if (save_path_is_sample()) {
+            set_level_status("Change the path before saving; the bundled sample is read-only.", true);
+            return;
+        }
+        try {
+            engine::save_level_file(std::filesystem::path(level_path_), *inspection_document_);
+            set_level_status("Level document saved.");
+        } catch (const engine::LevelDocumentError& error) {
+            set_level_status(error.what(), true);
+        } catch (const engine::LevelFileError& error) {
+            set_level_status(error.what(), true);
+        }
+    }
+    void reload_inspection_document() {
+        if (!inspection_document_) {
+            set_level_status("Load a level document before reloading.", true);
+            return;
+        }
+        try {
+            auto replacement = *inspection_document_;
+            engine::reload_level(replacement, std::filesystem::path(level_path_));
+            install_inspection_document(std::move(replacement));
+            set_level_status("Level document safely reloaded.");
+        } catch (const engine::LevelDocumentError& error) {
+            set_level_status(error.what(), true);
+        } catch (const engine::LevelFileError& error) {
+            set_level_status(error.what(), true);
+        }
+    }
+    std::string short_path(const std::string& path) const {
+        constexpr std::size_t visible_characters = 78;
+        if (path.size() <= visible_characters) {
+            return path;
+        }
+        return "..." + path.substr(path.size() - visible_characters + 3);
+    }
+    std::string short_text(const std::string& value, std::size_t visible_characters) const {
+        if (value.size() <= visible_characters) {
+            return value;
+        }
+        return value.substr(0, visible_characters - 3) + "...";
+    }
+    std::string metric_value(const std::optional<double>& value) const {
+        if (!value) {
+            return "N/A";
+        }
+        std::ostringstream formatted;
+        formatted << std::fixed << std::setprecision(1) << *value;
+        return formatted.str();
+    }
+    std::string metric_value(const std::optional<std::size_t>& value) const {
+        return value ? std::to_string(*value) : "N/A";
+    }
+    void exercise_inspector(const auto& check) {
+        update_inspection_metrics(16);
+        check(inspection_metrics_.runtime_entity_count == game_.world().size(),
+              "Populate metrics from the live world");
+        check(inspection_metrics_.cached_resource_count == assets_.size(),
+              "Inspection reports the cached file resource count");
+        check(metric_value(inspection_metrics_.cached_resource_count) == std::to_string(assets_.size()),
+              "Format the cached file resource count for display");
+        const auto live_entity_count = game_.world().size();
+        const auto fire_position = position(0);
+        const auto water_position = position(1);
+        screen_ = Screen::play;
+        key(SDL_SCANCODE_F3, true);
+        check(screen_ == Screen::tools, "F3 opens Developer Tools");
+        draw();
+        click(180, 640);
+        check(tools_tab_ == ToolsTab::level_document, "Open Level Document view");
+        check(inspection_snapshot_ && inspection_snapshot_->name == "Inspector Sample Room",
+              "Load bundled level document");
+        check(inspection_snapshot_->objects.size() == 3 && inspection_snapshot_->spawns.size() == 2,
+              "Inspect sample document counts");
+        draw();
+        click(180, 440);
+        check(selected_object_id_ == "plate-main", "Select level object by stable ID");
+
+        const auto temporary_path = path_.parent_path() / "inspector-roundtrip.level.json";
+        std::filesystem::create_directories(temporary_path.parent_path());
+        draw();
+        enter_level_path(temporary_path.string());
+        draw();
+        click(980, 135);
+        check(std::filesystem::is_regular_file(temporary_path), "Save inspected document");
+        const auto saved = engine::load_level_file(temporary_path);
+        check(saved.name == "Inspector Sample Room" && saved.objects.size() == 3,
+              "Saved native document fields");
+
+        auto edited = saved;
+        edited.name = "Reloaded Inspector Room";
+        engine::save_level_file(temporary_path, edited);
+        draw();
+        click(1150, 135);
+        check(inspection_snapshot_ && inspection_snapshot_->name == "Reloaded Inspector Room",
+              "Reload native document");
+        check(selected_object_id_ == "plate-main", "Preserve selection after successful reload");
+
+        const auto previous_name = inspection_snapshot_->name;
+        const auto previous_selection = selected_object_id_;
+        {
+            std::ofstream invalid_file(temporary_path, std::ios::binary | std::ios::trunc);
+            invalid_file << "{invalid";
+        }
+        draw();
+        click(1150, 135);
+        check(inspection_snapshot_->name == previous_name && selected_object_id_ == previous_selection,
+              "Failed reload preserves document and selection");
+        check(level_status_error_, "Failed reload displays an error");
+
+        const auto second_path = path_.parent_path() / "inspector-load.level.json";
+        auto second_document = saved;
+        second_document.name = "Loaded Inspector Room";
+        engine::save_level_file(second_path, second_document);
+        draw();
+        enter_level_path(second_path.string());
+        draw();
+        click(840, 135);
+        check(inspection_snapshot_->name == "Loaded Inspector Room",
+              "Load another native document");
+        check(game_.world().size() == live_entity_count &&
+              position(0).x == fire_position.x && position(0).y == fire_position.y &&
+              position(1).x == water_position.x && position(1).y == water_position.y,
+              "Document operations leave the live ECS unchanged");
+
+        key(SDL_SCANCODE_ESCAPE, true);
+        check(screen_ == Screen::play, "Escape returns to gameplay");
+    }
+    void enter_level_path(const std::string& path) {
+        click(200, 140);
+        SDL_Event select_all{};
+        select_all.type = SDL_EVENT_KEY_DOWN;
+        select_all.key.scancode = SDL_SCANCODE_A;
+        select_all.key.mod = SDL_KMOD_CTRL;
+        handle(select_all);
+        std::array<char, 32> text_chunk{};
+        constexpr std::size_t chunk_size = 31;
+        for (std::size_t offset = 0; offset < path.size(); offset += chunk_size) {
+            SDL_Event input{};
+            input.type = SDL_EVENT_TEXT_INPUT;
+            const auto count = std::min(chunk_size, path.size() - offset);
+            std::copy_n(path.data() + offset, count, text_chunk.data());
+            text_chunk[count] = '\0';
+            input.text.text = text_chunk.data();
+            handle(input);
+        }
+    }
     void color(SDL_Color c) { SDL_SetRenderDrawColor(renderer_.get(), c.r,c.g,c.b,c.a); }
     void rect(float x,float y,float w,float h,SDL_Color c) {
         color(c); SDL_FRect box{x,y,w,h}; SDL_RenderFillRect(renderer_.get(), &box);
@@ -321,6 +571,44 @@ private:
         case 18: reset_game(); notice_="Built-in demo level reloaded."; break;
         case 19: tone(); break;
         case 20: go(Screen::pause); break;
+        case 21:
+            tools_tab_ = ToolsTab::level_document;
+            level_path_active_ = false;
+            SDL_StopTextInput(window_.get());
+            break;
+        case 22:
+            tools_tab_ = ToolsTab::live_entities;
+            level_path_active_ = false;
+            SDL_StopTextInput(window_.get());
+            break;
+        case 23:
+            if (object_page_ > 0) --object_page_;
+            break;
+        case 24:
+            if (inspection_snapshot_ &&
+                (object_page_ + 1) * 3 < inspection_snapshot_->objects.size()) {
+                ++object_page_;
+            }
+            break;
+        case 25: load_inspection_document(); break;
+        case 26: save_inspection_document(); break;
+        case 27: reload_inspection_document(); break;
+        case 30:
+        case 31:
+        case 32: {
+            const auto index = object_page_ * 3 + static_cast<std::size_t>(id - 30);
+            if (inspection_snapshot_ && index < inspection_snapshot_->objects.size()) {
+                const auto& object = inspection_snapshot_->objects[index];
+                if (inspection_snapshot_->find_object(object.id) != nullptr) {
+                    selected_object_id_ = object.id;
+                    level_status_.clear();
+                    level_status_error_ = false;
+                } else {
+                    set_level_status("This object ID is ambiguous and cannot be selected.", true);
+                }
+            }
+            break;
+        }
         default: break;
         }
     }
@@ -330,9 +618,21 @@ private:
         if(screen_==Screen::lobby && x>=260 && x<1020 && y>=200 && y<=255) {
             address_active_=true; SDL_StartTextInput(window_.get()); return;
         }
+        if (screen_ == Screen::tools && tools_tab_ == ToolsTab::level_document &&
+            x >= 50 && x <= 760 && y >= 120 && y <= 166) {
+            address_active_ = false;
+            level_path_active_ = true;
+            SDL_StartTextInput(window_.get());
+            return;
+        }
         for(const auto& b:buttons_) {
             if(b.enabled && x>=b.rect.x && x<=b.rect.x+b.rect.w && y>=b.rect.y && y<=b.rect.y+b.rect.h) {
-                const int id=b.id; activate(id); break;
+                const int id=b.id;
+                level_path_active_ = false;
+                address_active_ = false;
+                SDL_StopTextInput(window_.get());
+                activate(id);
+                break;
             }
         }
     }
@@ -349,6 +649,13 @@ private:
             SDL_ConvertEventToRenderCoordinates(renderer_.get(),&e);
             if(e.type==SDL_EVENT_MOUSE_MOTION) { mx_=e.motion.x; my_=e.motion.y; }
             else if(e.button.button==SDL_BUTTON_LEFT) click(e.button.x,e.button.y);
+            return;
+        }
+        if (e.type == SDL_EVENT_TEXT_INPUT && screen_ == Screen::tools &&
+            tools_tab_ == ToolsTab::level_document && level_path_active_) {
+            for (const char* p = e.text.text; *p != '\0' && level_path_.size() < 1024; ++p) {
+                level_path_ += *p;
+            }
             return;
         }
         if(e.type==SDL_EVENT_TEXT_INPUT && screen_==Screen::lobby && address_active_) {
@@ -371,6 +678,22 @@ private:
                 return;
             }
             if(screen_!=Screen::play) {
+                if (screen_ == Screen::tools && tools_tab_ == ToolsTab::level_document &&
+                    level_path_active_ && (e.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0 &&
+                    scan == SDL_SCANCODE_A) {
+                    level_path_.clear();
+                    return;
+                }
+                if (screen_ == Screen::tools && tools_tab_ == ToolsTab::level_document &&
+                    level_path_active_ && scan == SDL_SCANCODE_BACKSPACE && !level_path_.empty()) {
+                    auto index = level_path_.size() - 1;
+                    while (index > 0 &&
+                           (static_cast<unsigned char>(level_path_[index]) & 0xC0U) == 0x80U) {
+                        --index;
+                    }
+                    level_path_.erase(index);
+                    return;
+                }
                 if(address_active_ && scan==SDL_SCANCODE_BACKSPACE && !address_.empty()) { address_.pop_back(); return; }
                 if(scan==SDL_SCANCODE_TAB || scan==SDL_SCANCODE_DOWN) {
                     if(!buttons_.empty()) focus_=(focus_+1)%static_cast<int>(buttons_.size());
@@ -468,6 +791,106 @@ private:
         text(30,79,"FIRE  A / D / W     WATER  ARROWS     E  LEVER",1.1F,muted);
         text(395,79,game_.open()?"Unlocked: climb the stepping stones to the exits.":"Flip the lever, then stand on the pressure plate.",1.1F,cyan);
     }
+    void draw_level_document_view() {
+        center(35, "LEVEL DOCUMENT INSPECTOR", 3.2F);
+        text(50, 95, "NATIVE JSON PATH  (CTRL/CMD+A TO REPLACE)", 1.1F, muted);
+        rounded(50, 120, 710, 46, 7, level_path_active_ ? cyan : blue);
+        rounded(54, 124, 702, 38, 5, navy);
+        text(64, 135, short_path(level_path_), 1.2F, white);
+        button(790, 112, 120, "LOAD", 25, !level_path_.empty());
+        button(920, 112, 120, "SAVE", 26, inspection_document_.has_value() && !save_path_is_sample());
+        button(1050, 112, 175, "RELOAD", 27, inspection_document_.has_value() && !level_path_.empty());
+
+        if (inspection_snapshot_) {
+            const auto& snapshot = *inspection_snapshot_;
+            const std::string summary =
+                "NAME: " + short_text(snapshot.name, 32) +
+                "  BOUNDS: (" + std::to_string(snapshot.bounds.minimum.x) + "," +
+                std::to_string(snapshot.bounds.minimum.y) + ")-(" +
+                std::to_string(snapshot.bounds.maximum.x) + "," +
+                std::to_string(snapshot.bounds.maximum.y) + ")" +
+                "  SPAWNS: " + std::to_string(snapshot.spawns.size()) +
+                "  OBJECTS: " + std::to_string(snapshot.objects.size());
+            text(50, 178, short_text(summary, 145), 1.15F, cyan);
+        } else {
+            text(50, 178, "No level document loaded.", 1.3F, muted);
+        }
+
+        text(50, 202,
+             "FPS: " + metric_value(inspection_metrics_.fps) +
+             "  FRAME: " + metric_value(inspection_metrics_.frame_time_ms) + " ms" +
+             "  LIVE WORLD ENTITIES: " + metric_value(inspection_metrics_.runtime_entity_count) +
+             "  CACHED FILE RESOURCES: " + metric_value(inspection_metrics_.cached_resource_count),
+             1.1F, muted);
+
+        rounded(50, 230, 450, 360, 10, panel);
+        rounded(530, 230, 700, 360, 10, panel);
+        text(75, 248, "LEVEL-DOCUMENT OBJECTS (NOT ECS ENTITIES)", 1.35F, cyan);
+        text(550, 248, "SELECTED LEVEL OBJECT", 1.5F, cyan);
+        if (inspection_snapshot_) {
+            constexpr std::size_t objects_per_page = 3;
+            const auto& objects = inspection_snapshot_->objects;
+            const auto page_count = std::max<std::size_t>(
+                1, (objects.size() + objects_per_page - 1) / objects_per_page);
+            object_page_ = std::min(object_page_, page_count - 1);
+            const auto first = object_page_ * objects_per_page;
+            for (std::size_t row = 0; row < objects_per_page && first + row < objects.size(); ++row) {
+                const auto& object = objects[first + row];
+                const auto label = (object.id == selected_object_id_ ? "> " : "  ") +
+                                   short_text(object.id + " [" + object.type + "]", 38);
+                button(70, 280 + static_cast<float>(row) * 65, 410, label,
+                       30 + static_cast<int>(row));
+            }
+            button(70, 500, 140, "PREVIOUS", 23, object_page_ > 0);
+            text(215, 520, "PAGE " + std::to_string(object_page_ + 1) + "/" +
+                 std::to_string(page_count), 1.0F, muted);
+            button(350, 500, 130, "NEXT", 24, object_page_ + 1 < page_count);
+
+            const auto* object = inspection_snapshot_->find_object(selected_object_id_);
+            if (object == nullptr) {
+                text(550, 290, "Select an object with a unique stable ID.", 1.25F, muted);
+            } else {
+                text(550, 285, "ID: " + short_text(object->id, 78), 1.25F, white);
+                text(550, 315, "Type: " + short_text(object->type, 78), 1.25F, white);
+                text(550, 345, "Position: " + std::to_string(object->position.x) + ", " +
+                     std::to_string(object->position.y), 1.25F, white);
+                text(550, 375, "Dimensions: " + std::to_string(object->size.x) + " x " +
+                     std::to_string(object->size.y), 1.25F, white);
+                text(550, 405, "Prefab: " + short_text(object->prefab.empty() ? "N/A" : object->prefab, 78),
+                     1.25F, white);
+                text(550, 435, "Parent ID: " + short_text(object->parent_id.empty() ? "N/A" : object->parent_id, 78),
+                     1.25F, white);
+                text(550, 465, "Linked ID: " + short_text(object->linked_id.empty() ? "N/A" : object->linked_id, 78),
+                     1.25F, white);
+            }
+
+            text(550, 500, "VALIDATION DIAGNOSTICS", 1.15F, cyan);
+            if (inspection_snapshot_->validation_errors.empty()) {
+                text(550, 528, "No validation errors.", 1.1F, green);
+            } else {
+                const auto visible_errors = std::min<std::size_t>(
+                    2, inspection_snapshot_->validation_errors.size());
+                for (std::size_t i = 0; i < visible_errors; ++i) {
+                    text(550, 526 + static_cast<float>(i) * 22,
+                         short_text(inspection_snapshot_->validation_errors[i], 100), 0.95F, orange);
+                }
+                if (inspection_snapshot_->validation_errors.size() > visible_errors) {
+                    text(550, 570, "Additional validation errors are available in the inspection snapshot.",
+                         0.9F, orange);
+                }
+            }
+        } else {
+            text(75, 295, "Load the bundled sample or enter a native level JSON path.", 1.1F, muted);
+            text(550, 290, "No selected level object.", 1.25F, muted);
+        }
+
+        if (!level_status_.empty()) {
+            text(50, 592, short_text(level_status_, 150), 1.0F,
+                 level_status_error_ ? orange : green);
+        }
+        button(50, 610, 300, "LIVE ENTITIES", 22);
+        button(440, 610, 400, "BACK", 16);
+    }
     void draw() {
         buttons_.clear(); background();
         switch(screen_) {
@@ -516,21 +939,34 @@ private:
             break;
         }
         case Screen::tools: {
-            center(50,"DEVELOPER TOOLS",4);
-            text(60,120,"LEVEL: reference room 01",2,cyan);
-            button(800,105,420,"RELOAD DEMO LEVEL",18);
-            rounded(50,190,450,390,10,panel); rounded(530,190,700,390,10,panel);
-            text(80,220,"ENTITY LIST",2); button(80,275,380,selected_==0?"> PLAYER FIRE":"> PLAYER WATER",17);
-            text(80,370,"2 controllable players",2,muted); text(80,410,"Click to change selection",1.5F,muted);
-            const auto p=position(static_cast<std::size_t>(selected_));
-            const auto& state=game_.player(static_cast<std::size_t>(selected_));
-            text(560,220,"SELECTED ENTITY",2);
-            text(560,285,"Position: "+std::to_string(static_cast<int>(p.x))+", "+std::to_string(static_cast<int>(p.y)),2);
-            text(560,335,"Velocity: "+std::to_string(static_cast<int>(state.body.velocity.x))+", "+std::to_string(static_cast<int>(state.body.velocity.y)),2);
-            text(560,385,state.grounded?"Grounded: yes":"Grounded: no",2);
-            text(560,435,"World entities: "+std::to_string(game_.world().size()),2);
-            text(560,490,"Simulation frozen while inspecting",1.5F,muted);
-            button(440,610,400,"BACK",16); break;
+            if (tools_tab_ == ToolsTab::level_document) {
+                draw_level_document_view();
+            } else {
+                center(50,"DEVELOPER TOOLS",4);
+                text(60,120,"LEVEL: reference room 01",2,cyan);
+                button(800,105,420,"RELOAD DEMO LEVEL",18);
+                rounded(50,190,450,390,10,panel); rounded(530,190,700,390,10,panel);
+                text(80,220,"LIVE PLAYER ENTITIES",2);
+                button(80,275,380,selected_==0?"> PLAYER FIRE":"> PLAYER WATER",17);
+                text(80,370,"2 controllable players",2,muted);
+                text(80,410,"Click to change selection",1.5F,muted);
+                const auto p=position(static_cast<std::size_t>(selected_));
+                const auto& state=game_.player(static_cast<std::size_t>(selected_));
+                text(560,220,"SELECTED LIVE ECS ENTITY",1.65F);
+                text(560,285,"Position: "+std::to_string(static_cast<int>(p.x))+", "+std::to_string(static_cast<int>(p.y)),2);
+                text(560,335,"Velocity: "+std::to_string(static_cast<int>(state.body.velocity.x))+", "+std::to_string(static_cast<int>(state.body.velocity.y)),2);
+                text(560,385,state.grounded?"Grounded: yes":"Grounded: no",2);
+                text(560,435,"World entities: "+std::to_string(game_.world().size()),2);
+                text(560,490,"Simulation frozen while inspecting",1.5F,muted);
+                text(560,535,
+                     "FPS: " + metric_value(inspection_metrics_.fps) +
+                     "  FRAME: " + metric_value(inspection_metrics_.frame_time_ms) + " ms" +
+                     "  CACHED FILE RESOURCES: " + metric_value(inspection_metrics_.cached_resource_count),
+                     1.0F, muted);
+                button(50,610,300,"LEVEL DOCUMENT",21);
+                button(440,610,400,"BACK",16);
+            }
+            break;
         }
         }
         if(!notice_.empty()) { rect(20,659,1240,23,navy); text(28,663,notice_,1.5F,cyan); }

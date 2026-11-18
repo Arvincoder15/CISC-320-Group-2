@@ -99,6 +99,96 @@ int main() { return run_test([] {
     CHECK(engine::validate(engine::LevelDocument{2, {}, "", {0.0F, 0.0F}, {}}).size() == 1);
     CHECK(engine::validate(engine::LevelDocument{1, {{"", {0.0F, 0.0F}, "spawn-1"}}, "", {0.0F, 0.0F}, {}}).size() == 1);
 
+    const engine::LevelDocument empty_document{};
+    const auto empty_inspection = engine::inspect_level_document(empty_document);
+    CHECK(empty_inspection.schema_version == 1);
+    CHECK(empty_inspection.name.empty());
+    CHECK(near(empty_inspection.bounds.minimum.x, 0.0F));
+    CHECK(near(empty_inspection.bounds.minimum.y, 0.0F));
+    CHECK(near(empty_inspection.bounds.maximum.x, 0.0F));
+    CHECK(near(empty_inspection.bounds.maximum.y, 0.0F));
+    CHECK(empty_inspection.spawns.empty());
+    CHECK(empty_inspection.objects.empty());
+    CHECK(empty_inspection.validation_errors.empty());
+    CHECK(empty_inspection.find_object("missing") == nullptr);
+    CHECK(empty_inspection.find_object("") == nullptr);
+
+    const auto inspected_document = persistence_sample();
+    auto inspection = engine::inspect_level_document(inspected_document);
+    CHECK(inspection.schema_version == inspected_document.schema_version);
+    CHECK(inspection.name == inspected_document.name);
+    CHECK(near(inspection.bounds.minimum.x, 0.0F));
+    CHECK(near(inspection.bounds.minimum.y, 0.0F));
+    CHECK(near(inspection.bounds.maximum.x, inspected_document.size.x));
+    CHECK(near(inspection.bounds.maximum.y, inspected_document.size.y));
+    CHECK(inspection.spawns.size() == inspected_document.spawns.size());
+    for (std::size_t i = 0; i < inspected_document.spawns.size(); ++i) {
+        CHECK(inspection.spawns[i].id == inspected_document.spawns[i].id);
+        CHECK(inspection.spawns[i].prefab == inspected_document.spawns[i].prefab);
+        CHECK(near(inspection.spawns[i].position.x, inspected_document.spawns[i].position.x));
+        CHECK(near(inspection.spawns[i].position.y, inspected_document.spawns[i].position.y));
+    }
+    CHECK(inspection.objects.size() == inspected_document.objects.size());
+    for (std::size_t i = 0; i < inspected_document.objects.size(); ++i) {
+        CHECK(inspection.objects[i].id == inspected_document.objects[i].id);
+        CHECK(inspection.objects[i].type == inspected_document.objects[i].type);
+        CHECK(inspection.objects[i].prefab == inspected_document.objects[i].prefab);
+        CHECK(near(inspection.objects[i].position.x, inspected_document.objects[i].position.x));
+        CHECK(near(inspection.objects[i].position.y, inspected_document.objects[i].position.y));
+        CHECK(near(inspection.objects[i].size.x, inspected_document.objects[i].size.x));
+        CHECK(near(inspection.objects[i].size.y, inspected_document.objects[i].size.y));
+        CHECK(inspection.objects[i].parent_id == inspected_document.objects[i].parent_id);
+        CHECK(inspection.objects[i].linked_id == inspected_document.objects[i].linked_id);
+    }
+    CHECK(inspection.validation_errors == engine::validate(inspected_document));
+    const auto* selected_object = inspection.find_object("plate-1");
+    CHECK(selected_object == &inspection.objects[2]);
+    CHECK(selected_object->prefab == "plate-prefab");
+    CHECK(selected_object->parent_id == "platform-1");
+    CHECK(selected_object->linked_id == "door-1");
+    CHECK(inspection.find_object("not-present") == nullptr);
+    CHECK(inspection.find_object("") == nullptr);
+    inspection.objects[2].position.x = -100.0F;
+    inspection.spawns[0].prefab = "changed";
+    CHECK(near(inspected_document.objects[2].position.x, 180.0F));
+    CHECK(inspected_document.spawns[0].prefab == "fire_player");
+
+    engine::InspectionMetrics unavailable_metrics;
+    CHECK(!unavailable_metrics.fps.has_value());
+    CHECK(!unavailable_metrics.frame_time_ms.has_value());
+    CHECK(!unavailable_metrics.runtime_entity_count.has_value());
+    CHECK(!unavailable_metrics.cached_resource_count.has_value());
+    engine::InspectionMetrics supplied_metrics;
+    supplied_metrics.fps = 59.5;
+    supplied_metrics.frame_time_ms = 16.8;
+    supplied_metrics.runtime_entity_count = 4;
+    supplied_metrics.cached_resource_count = 12;
+    CHECK(supplied_metrics.fps == 59.5);
+    CHECK(supplied_metrics.frame_time_ms == 16.8);
+    CHECK(supplied_metrics.runtime_entity_count == 4);
+    CHECK(supplied_metrics.cached_resource_count == 12);
+    supplied_metrics.fps = 0.0;
+    supplied_metrics.frame_time_ms = 0.0;
+    supplied_metrics.runtime_entity_count = 0;
+    supplied_metrics.cached_resource_count = 0;
+    CHECK(supplied_metrics.fps.has_value() && *supplied_metrics.fps == 0.0);
+    CHECK(supplied_metrics.frame_time_ms.has_value() && *supplied_metrics.frame_time_ms == 0.0);
+    CHECK(supplied_metrics.runtime_entity_count.has_value() && *supplied_metrics.runtime_entity_count == 0);
+    CHECK(supplied_metrics.cached_resource_count.has_value() && *supplied_metrics.cached_resource_count == 0);
+
+    auto invalid_inspection_document = inspected_document;
+    invalid_inspection_document.schema_version = 2;
+    invalid_inspection_document.objects[1].size = {0.0F, -1.0F};
+    invalid_inspection_document.objects[2].linked_id = "missing-door";
+    invalid_inspection_document.objects.push_back(invalid_inspection_document.objects[1]);
+    const auto invalid_inspection = engine::inspect_level_document(invalid_inspection_document);
+    CHECK(!invalid_inspection.validation_errors.empty());
+    CHECK(invalid_inspection.validation_errors == engine::validate(invalid_inspection_document));
+    CHECK(invalid_inspection.schema_version == invalid_inspection_document.schema_version);
+    CHECK(near(invalid_inspection.bounds.maximum.x, invalid_inspection_document.size.x));
+    CHECK(invalid_inspection.find_object("door-1") == nullptr);
+    CHECK(invalid_inspection.find_object("missing-door") == nullptr);
+
     engine::LevelDocument valid_document{};
     valid_document.schema_version = 1;
     valid_document.spawns.push_back({"player", {0.0F, 0.0F}, "spawn-1"});

@@ -53,8 +53,22 @@ its official source into a user-owned folder and supply that prefix to CMake.
   defaults are used, and the terminal/UI reports the failure.
 - Apply uses `save_engine_settings` and creates the parent directory first.
   A failed save rolls the requested window state back and retains prior settings.
-- Developer Tools shows actual player positions, velocities, grounded state and
-  entity count. Switch selection or reload the built-in level. Simulation is paused here.
+- Developer Tools preserves the live-player inspector and adds a separate Level
+  Document view. It shows the native document name, bounds, spawn/object counts,
+  validation diagnostics, a paged object list and selected-object properties.
+  Selection uses stable document object IDs; document objects are not ECS entities.
+- The Level Document view loads, saves and safely reloads native
+  `cisc320.level-document` JSON through Gunveer's Development Tools API. Enter a
+  file path and use Ctrl+A (Command+A on macOS) to replace it. The bundled
+  `assets/inspector_sample.level.json` demonstrates spawn definitions and linked
+  door/exit/pressure-plate objects. Saving over the bundled sample is disabled.
+- FPS and frame time are measured from SDL frame intervals, the live world entity
+  count comes from the existing `World`, and cached file resources come from
+  `FileResourceManager::size()`. The latter counts cached file data (currently
+  the font atlas), not SDL textures, audio resources, or all game assets. Metrics
+  remain optional and display as N/A when the host does not supply a value.
+  Level-document file operations use a detached `LevelDocument`; they do not
+  load or mutate the playable ECS world.
 - F12 saves the current rendered frame as BMP, logging its location in the terminal.
 
 ## Storage
@@ -79,8 +93,10 @@ explicitly if you want to reset it, then restart or Apply again.
   for smooth text. Its redistribution license is in `assets/FONT-LICENSE.txt`.
   No new runtime library is needed. Original RAD images are design references,
   not screenshots of this executable. The recreation is not pixel-identical.
-- Developer Tools is a minimal live inspector, not Gunveer's full editor. File
-  loading, entity editing and saving level JSON remain his integration work.
+- Developer Tools provides a live-player inspector and a detached Level Document
+  inspector. It does not edit live ECS entities or instantiate level objects.
+  Native document persistence is not Tiled JSON import; the existing Tiled
+  importer remains a separate engine API. This is not a full visual level editor.
 - This executable owns one SDL event loop and renderer. Coordinate with Aryaman
   before moving it into the final app. Future ImGui input capture must be respected.
 - Audio is a short generated tone only, not a finished music or effects manager.
@@ -99,8 +115,11 @@ Automated smoke test (uses an isolated temporary settings path):
 
 On headless Linux, prefix with `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy`.
 The smoke test checks menu navigation, independent player keyboard movement/jump,
-focus clearing, settings save/load, hazard-to-Game-Over routing and a reachable win.
-`test_ui_level` additionally checks all six elemental hazard combinations, remote
+focus clearing, settings save/load, hazard-to-Game-Over routing, a reachable win,
+opening the document inspector, stable-ID selection, editable-path loading,
+native save/reload, and failed-reload preservation of the document and selection.
+It also verifies that document operations leave the live ECS entity count and
+player positions unchanged. `test_ui_level` additionally checks all six elemental hazard combinations, remote
 lever rejection, cooperative unlocking, one-exit insufficiency and restart. Its
 walkthrough uses normal input frames and physics, with no teleports or forced wins.
 It does not verify sound through a physical speaker or OS fullscreen behaviour.
@@ -123,7 +142,10 @@ Manual checks before SDD submission:
 5. Apply fullscreen/window size and volume. Test audio with effects on/off.
 6. Close and reopen the application. Confirm settings persist.
 7. Test the elemental pools and Retry. Complete the lever/plate puzzle and reach both exits.
-8. Open F3 and confirm live values match the selected player. Reload and return.
+8. Open F3 and confirm live values match the selected player. Switch to Level
+   Document, select an object, inspect its relationships, and load/save/reload a
+   copy of the bundled sample. Try malformed JSON and confirm the last valid
+   document remains visible. Return to gameplay and verify it is unchanged.
 9. Check the lobby and Next Level clearly indicate unfinished functionality.
 
 ## A playable walkthrough

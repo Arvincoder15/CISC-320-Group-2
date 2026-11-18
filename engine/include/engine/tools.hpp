@@ -1,6 +1,8 @@
 #pragma once
 #include "engine/types.hpp"
+#include <cstddef>
 #include <filesystem>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -28,6 +30,33 @@ struct LevelDocument {
     std::string name;
     Vec2 size{};
     std::vector<LevelObject> objects;
+};
+
+struct LevelBounds {
+    Vec2 minimum{};
+    Vec2 maximum{};
+};
+
+struct LevelInspectionSnapshot {
+    int schema_version{1};
+    std::string name;
+    LevelBounds bounds{};
+    std::vector<SpawnDefinition> spawns;
+    std::vector<LevelObject> objects;
+    std::vector<std::string> validation_errors;
+
+    // Returns a pointer into this snapshot; missing, empty, or ambiguous IDs return nullptr.
+    const LevelObject* find_object(std::string_view object_id) const noexcept;
+};
+
+LevelInspectionSnapshot inspect_level_document(const LevelDocument& document);
+
+// Measurements are optional and supplied by the host; frame timing is in milliseconds.
+struct InspectionMetrics {
+    std::optional<double> fps;
+    std::optional<double> frame_time_ms;
+    std::optional<std::size_t> runtime_entity_count;
+    std::optional<std::size_t> cached_resource_count;
 };
 
 class LevelDocumentError : public std::runtime_error {
