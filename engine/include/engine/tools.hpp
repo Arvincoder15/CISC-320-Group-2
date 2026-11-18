@@ -1,6 +1,9 @@
 #pragma once
 #include "engine/types.hpp"
+#include <filesystem>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 namespace engine {
 struct SpawnDefinition {
@@ -27,6 +30,27 @@ struct LevelDocument {
     std::vector<LevelObject> objects;
 };
 
-// Gunveer: JSON/Tiled import and ImGui UI adapt into this neutral model.
+class LevelDocumentError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+class LevelFileError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
 std::vector<std::string> validate(const LevelDocument& document);
+
+// Native versioned JSON format; distinct from Tiled JSON and game-specific schemas.
+std::string serialize_level_json(const LevelDocument& document);
+LevelDocument parse_level_json(std::string_view json, std::string_view source = "<memory>");
+
+// File paths may be absolute or relative to the process working directory.
+// Saves require an existing parent directory and replace files through a sibling temporary.
+LevelDocument load_level_file(const std::filesystem::path& path);
+void save_level_file(const std::filesystem::path& path, const LevelDocument& document);
+
+// Loads and validates a complete replacement before changing the active document.
+void reload_level(LevelDocument& active, const std::filesystem::path& path);
 }
