@@ -212,6 +212,35 @@ std::vector<std::string> validate(const LevelDocument& document) {
     return errors;
 }
 
+const LevelObject* LevelInspectionSnapshot::find_object(std::string_view object_id) const noexcept {
+    if (object_id.empty()) {
+        return nullptr;
+    }
+
+    const LevelObject* match = nullptr;
+    for (const auto& object : objects) {
+        if (object.id != object_id) {
+            continue;
+        }
+        if (match != nullptr) {
+            return nullptr;
+        }
+        match = &object;
+    }
+    return match;
+}
+
+LevelInspectionSnapshot inspect_level_document(const LevelDocument& document) {
+    LevelInspectionSnapshot snapshot;
+    snapshot.schema_version = document.schema_version;
+    snapshot.name = document.name;
+    snapshot.bounds = {{0.0F, 0.0F}, document.size};
+    snapshot.spawns = document.spawns;
+    snapshot.objects = document.objects;
+    snapshot.validation_errors = validate(document);
+    return snapshot;
+}
+
 std::string serialize_level_json(const LevelDocument& document) {
     const auto errors = validate(document);
     if (!errors.empty()) {
