@@ -171,6 +171,7 @@ private:
     void reset_game() { clear_input(); game_.restart(); }
     void update_inspection_metrics(Uint64 frame_time_ms) {
         inspection_metrics_.runtime_entity_count = game_.world().size();
+        inspection_metrics_.cached_resource_count = assets_.size();
         if (frame_time_ms == 0) {
             inspection_metrics_.fps.reset();
             inspection_metrics_.frame_time_ms.reset();
@@ -306,8 +307,10 @@ private:
         update_inspection_metrics(16);
         check(inspection_metrics_.runtime_entity_count == game_.world().size(),
               "Populate metrics from the live world");
-        check(!inspection_metrics_.cached_resource_count,
-              "Cache metrics remain outside InspectionMetrics pending approval");
+        check(inspection_metrics_.cached_resource_count == assets_.size(),
+              "Inspection reports the cached file resource count");
+        check(metric_value(inspection_metrics_.cached_resource_count) == std::to_string(assets_.size()),
+              "Format the cached file resource count for display");
         const auto live_entity_count = game_.world().size();
         const auto fire_position = position(0);
         const auto water_position = position(1);
@@ -817,7 +820,7 @@ private:
              "FPS: " + metric_value(inspection_metrics_.fps) +
              "  FRAME: " + metric_value(inspection_metrics_.frame_time_ms) + " ms" +
              "  LIVE WORLD ENTITIES: " + metric_value(inspection_metrics_.runtime_entity_count) +
-             "  RESOURCE CACHE: " + metric_value(inspection_metrics_.cached_resource_count),
+             "  CACHED FILE RESOURCES: " + metric_value(inspection_metrics_.cached_resource_count),
              1.1F, muted);
 
         rounded(50, 230, 450, 360, 10, panel);
@@ -958,7 +961,7 @@ private:
                 text(560,535,
                      "FPS: " + metric_value(inspection_metrics_.fps) +
                      "  FRAME: " + metric_value(inspection_metrics_.frame_time_ms) + " ms" +
-                     "  CACHE: " + metric_value(inspection_metrics_.cached_resource_count),
+                     "  CACHED FILE RESOURCES: " + metric_value(inspection_metrics_.cached_resource_count),
                      1.0F, muted);
                 button(50,610,300,"LEVEL DOCUMENT",21);
                 button(440,610,400,"BACK",16);

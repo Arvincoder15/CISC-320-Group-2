@@ -62,11 +62,13 @@ its official source into a user-owned folder and supply that prefix to CMake.
   file path and use Ctrl+A (Command+A on macOS) to replace it. The bundled
   `assets/inspector_sample.level.json` demonstrates spawn definitions and linked
   door/exit/pressure-plate objects. Saving over the bundled sample is disabled.
-- FPS and frame time are measured from SDL frame intervals, and the live world
-  entity count comes from the existing `World`. Resource-cache statistics display
-  as N/A because this prototype has no cache-statistics interface. No metrics are
-  fabricated. Level-document file operations use a detached `LevelDocument`;
-  they do not load or mutate the playable ECS world.
+- FPS and frame time are measured from SDL frame intervals, the live world entity
+  count comes from the existing `World`, and cached file resources come from
+  `FileResourceManager::size()`. The latter counts cached file data (currently
+  the font atlas), not SDL textures, audio resources, or all game assets. Metrics
+  remain optional and display as N/A when the host does not supply a value.
+  Level-document file operations use a detached `LevelDocument`; they do not
+  load or mutate the playable ECS world.
 - F12 saves the current rendered frame as BMP, logging its location in the terminal.
 
 ## Storage
