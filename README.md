@@ -14,6 +14,10 @@ Shared C++ starter for all nine developers. The demonstration is a Fireboy-and-W
 
 ## Quick start
 
+For the optional SDL3 rendering backend and animated visual demo, see
+[Rendering setup](docs/RENDERING.md). It adds textures, sprites, tilemaps, camera
+controls, layers and bitmap text while preserving the headless build below.
+
 Requires CMake 3.20+ and a compiler with C++20 support. No third-party library download is required for the starter.
 
 ```sh

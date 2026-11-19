@@ -1,0 +1,19 @@
+name: Rendering backend
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  rendering:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure optional renderer
+        run: cmake -S . -B build-rendering -DCMAKE_BUILD_TYPE=Debug -DGROUP2_BUILD_SDL_RENDERER=ON -DGROUP2_FETCH_SDL=ON -DSDL_UNIX_CONSOLE_BUILD=ON
+      - name: Build
+        run: cmake --build build-rendering --config Debug --parallel 4
+      - name: Run engine tests and rendered pixel checks
+        run: ctest --test-dir build-rendering -C Debug --output-on-failure
