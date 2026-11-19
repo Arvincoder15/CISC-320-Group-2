@@ -72,6 +72,46 @@ its official source into a user-owned folder and supply that prefix to CMake.
   load or mutate the playable ECS world.
 - F12 saves the current rendered frame as BMP, logging its location in the terminal.
 
+## Acid enemies
+
+The campaign contains one acid slime on Easy, three on Medium, and five on Hard.
+They use the same bright green as toxic pools, animate as they move, and cause
+Game Over when their body overlaps either player. Jump over them; neither player
+has elemental immunity to an enemy. Enemies do not operate levers or plates.
+Pause freezes their movement and animation; Retry, Restart, and level transitions
+recreate their positions and AI state.
+
+Each JSON level contains named `acid_enemy` entries in `spawns`, with feet-position
+coordinates. Spawn validation checks platform support, clearance, unique IDs,
+no enemy overlap, and at least 80 pixels of separation from player spawns.
+A slime must also start on a different floor from both players. Platforms
+that touch at the same height count as one floor. Gaps or height changes
+separate floors. In Medium, both players start on raised ledges above the
+slimes' patrol routes.
+
+On Easy and Medium, each slime patrols the full walkable span of its platform
+at 92 pixels/s. It
+chases the nearest grounded player on that connected floor at any distance,
+regardless of which way either character faces. Gaps, hazards, and closed
+doors interrupt the route. When a player leaves the floor, the slime briefly
+searches the last reachable position before resuming patrol.
+
+On Hard, each slime pursues a player from the start. The five slimes split into
+groups of two and three, using the closest overall assignments. They walk at
+92 pixels/s and can jump to reachable platforms, including narrow ledges and
+the platforms that carry levers and pressure plates. They use the same jump
+height as players and a lower horizontal speed. Hunters can walk immediately,
+with a short starting delay before their first jump and a recovery after each
+landing. They pursue a jumping player's last grounded position until the
+player lands. At a closed gate, slimes move as close as they can and take
+advantage of new routes when the gate opens. This behavior is
+enabled for playable levels whose names end in ` - Hard`.
+
+`test_ui_enemies` covers counts, spawn validation, patrol, pursuit, both players'
+contact deaths, jumping over enemies, obstacles, and restart. The three campaign
+walkthroughs run with enemies enabled, and the UI smoke test checks enemy pause and
+Game Over routing. No additional external libraries or art downloads are required.
+
 ## Storage
 
 The app uses `SDL_GetPrefPath("CISC320Group2", "ElementalCoopPrototype")`.

@@ -91,7 +91,8 @@ if(GROUP2_BUILD_SDL_RENDERER)
     group2_target(rendering_demo)
     add_custom_command(TARGET rendering_demo POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/assets/rendering $<TARGET_FILE_DIR:rendering_demo>/rendering-assets)
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/rendering" "$<TARGET_FILE_DIR:rendering_demo>/rendering-assets"
+        VERBATIM)
     if(BUILD_TESTING)
         add_executable(test_sdl_rendering tests/sdl_rendering_test.cpp)
         target_include_directories(test_sdl_rendering PRIVATE tests)

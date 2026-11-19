@@ -46,8 +46,10 @@ struct ExitDefinition {
 
 struct PlayableLevelDefinition {
     std::string name;
+    bool hard_enemy_pursuit{};
     engine::Vec2 bounds{};
     std::array<engine::Vec2, elemental_coop::player_count> spawns{};
+    std::vector<engine::SpawnDefinition> enemy_spawns;
     std::vector<Rect> platforms;
     std::vector<Pool> hazards;
     std::vector<PuzzleGate> gates;
@@ -70,6 +72,45 @@ inline bool inside_world(const Rect& rectangle, engine::Vec2 world_size) {
         rectangle.y + rectangle.h <= world_size.y;
 }
 
+// Platforms with flush tops form one floor, even when authored as separate tiles.
+inline std::vector<std::pair<float, float>> connected_floor_spans(
+    const std::vector<Rect>& platforms, float floor_y) {
+    std::vector<std::pair<float, float>> spans;
+    for (const auto& platform : platforms) {
+        const float right = platform.x + platform.w;
+        if (std::abs(platform.y - floor_y) <= 0.01F &&
+            std::isfinite(platform.x) && std::isfinite(right) && right > platform.x)
+            spans.emplace_back(platform.x, right);
+    }
+    std::sort(spans.begin(), spans.end());
+    std::size_t merged = 0;
+    for (const auto& [left, right] : spans) {
+        if (merged > 0 && left <= spans[merged - 1].second)
+            spans[merged - 1].second = std::max(spans[merged - 1].second, right);
+        else
+            spans[merged++] = {left, right};
+    }
+    spans.resize(merged);
+    return spans;
+}
+
+inline bool shares_player_spawn_floor(const PlayableLevelDefinition& level, engine::Vec2 enemy) {
+    for (const auto& [left, right] : connected_floor_spans(level.platforms, enemy.y)) {
+        if (enemy.x < left || enemy.x > right) continue;
+        for (const auto player : level.spawns) {
+            // Player feet may overhang the platform as long as the collider is supported.
+            if (std::abs(player.y - enemy.y) <= 0.02F &&
+                player.x + 14 > left && player.x - 14 < right)
+                return true;
+        }
+    }
+    return false;
+}
+
+inline std::string enemy_spawn_floor_error(const engine::SpawnDefinition& spawn) {
+    return "Acid enemy spawn '" + spawn.id + "' shares a starting floor with a player";
+}
+
 inline std::string join_errors(const std::vector<std::string>& errors) {
     std::ostringstream message;
     for (std::size_t i = 0; i < errors.size(); ++i) {
@@ -89,6 +130,7 @@ inline PlayableLevelDefinition playable_level_from_document(const engine::LevelD
 
     PlayableLevelDefinition result;
     result.name = document.name;
+    result.hard_enemy_pursuit = document.name.ends_with(" - Hard");
     result.bounds = document.size;
     std::set<std::string> all_ids;
     std::array<bool, elemental_coop::player_count> spawn_found{};
@@ -98,15 +140,15 @@ inline PlayableLevelDefinition playable_level_from_document(const engine::LevelD
         std::size_t role = elemental_coop::player_count;
         if (spawn.prefab == "fire_player") role = 0;
         else if (spawn.prefab == "water_player") role = 1;
-        else errors.emplace_back("Unsupported player spawn prefab: " + spawn.prefab);
+        else if (spawn.prefab == "acid_enemy") result.enemy_spawns.push_back(spawn);
+        else errors.emplace_back("Unsupported spawn prefab: " + spawn.prefab);
         if (role < elemental_coop::player_count) {
             if (spawn_found[role]) errors.emplace_back("Level has duplicate player role: " + spawn.prefab);
             spawn_found[role] = true;
             result.spawns[role] = spawn.position;
         }
     }
-    if (document.spawns.size() != elemental_coop::player_count ||
-        !spawn_found[0] || !spawn_found[1]) {
+    if (!spawn_found[0] || !spawn_found[1]) {
         errors.emplace_back("Playable levels require exactly one fire_player and one water_player spawn");
     }
 
@@ -278,6 +320,33 @@ inline PlayableLevelDefinition playable_level_from_document(const engine::LevelD
         }
     }
 
+    for (std::size_t i = 0; i < result.enemy_spawns.size(); ++i) {
+        const auto p = result.enemy_spawns[i].position;
+        const Rect box{p.x - 16, p.y - 32, 32, 32};
+        if (!inside_world(box, document.size)) errors.emplace_back("Acid enemy spawn is outside level bounds");
+        const bool supported = std::any_of(result.platforms.begin(), result.platforms.end(),
+            [&](const Rect& platform) {
+                return std::abs(platform.y - p.y) < 0.01F &&
+                    p.x - 20 >= platform.x && p.x + 20 <= platform.x + platform.w;
+            });
+        if (!supported) errors.emplace_back("Acid enemy spawn needs full platform support and navigation clearance");
+        for (const auto& platform : result.platforms)
+            if (engine::overlaps(bounds(box), bounds(platform))) errors.emplace_back("Acid enemy spawn overlaps a platform");
+        for (const auto& gate : result.gates)
+            if (engine::overlaps(bounds(box), bounds(gate.door))) errors.emplace_back("Acid enemy spawn overlaps a door");
+        for (const auto& hazard : result.hazards)
+            if (engine::overlaps(bounds(box), bounds(hazard.box))) errors.emplace_back("Acid enemy spawn overlaps a hazard");
+        if (shares_player_spawn_floor(result, p))
+            errors.push_back(enemy_spawn_floor_error(result.enemy_spawns[i]));
+        for (const auto player : result.spawns)
+            if (std::hypot(player.x - p.x, player.y - p.y) < 80)
+                errors.emplace_back("Acid enemy spawn must be at least 80 pixels from players");
+        for (std::size_t j = 0; j < i; ++j) {
+            const auto other = result.enemy_spawns[j].position;
+            if (engine::overlaps(bounds(box), {{other.x - 16, other.y - 32}, {32, 32}}))
+                errors.emplace_back("Acid enemy spawns overlap");
+        }
+    }
     if (!errors.empty()) throw PlayableLevelError(join_errors(errors));
     return result;
 }

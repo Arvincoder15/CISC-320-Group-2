@@ -7,15 +7,36 @@
     {
       "id": "spawn-fire",
       "prefab": "fire_player",
-      "position": { "x": 120, "y": 580 }
+      "position": { "x": 120, "y": 530 }
     },
     {
       "id": "spawn-water",
       "prefab": "water_player",
-      "position": { "x": 1160, "y": 580 }
-    }
+      "position": { "x": 1140, "y": 530 }
+    },
+    {"id": "spawn-acid-1", "prefab": "acid_enemy", "position": {"x": 616, "y": 455}},
+    {"id": "spawn-acid-2", "prefab": "acid_enemy", "position": {"x": 1256, "y": 580}},
+    {"id": "spawn-acid-3", "prefab": "acid_enemy", "position": {"x": 24, "y": 580}}
   ],
   "objects": [
+    {
+      "id": "start-ledge-fire",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 72, "y": 530 },
+      "size": { "x": 80, "y": 12 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "start-ledge-water",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 1108, "y": 530 },
+      "size": { "x": 80, "y": 12 },
+      "parent_id": "",
+      "linked_id": ""
+    },
     {
       "id": "ground-west",
       "type": "platform",

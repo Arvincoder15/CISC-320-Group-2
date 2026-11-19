@@ -94,7 +94,8 @@ void verify_playable_level_assets() {
     for (const auto* definition : {&easy, &medium, &hard}) {
         check(definition->bounds.x == 1280 && definition->bounds.y == 720,
               "Playable definition uses the supported world bounds");
-        check(definition->spawns[0].y == 580 && definition->spawns[1].y == 580,
+        const float spawn_height = definition == &medium ? 530.0F : 580.0F;
+        check(definition->spawns[0].y == spawn_height && definition->spawns[1].y == spawn_height,
               "Playable spawn positions use feet coordinates");
         check(!definition->platforms.empty() &&
               definition->exits[0].id == "exit-fire" &&
@@ -166,6 +167,31 @@ void verify_hazard_rules(const prototype::PlayableLevelDefinition& easy) {
     }
 }
 
+void verify_hard_gate_barriers(prototype::PlayableLevelDefinition definition) {
+    // Keep the sustained push probes independent from the active enemy walkthrough.
+    definition.enemy_spawns.clear();
+    prototype::DemoLevel level(std::move(definition));
+    travel(level, 0, 206, true);
+    press_interact(level);
+    push_against_gate(level, 0, level.definition().gates[0].door);
+    check(!level.gate_open(0) && !level.gate_lever_on(1),
+          "Closed Gate A prevents access to Gate B's controls");
+
+    travel(level, 1, 404, true);
+    check(level.gate_open(0), "Distinct operators open Gate A");
+    travel(level, 1, 610, true);
+    travel(level, 1, 690, true);
+    travel(level, 1, 809, true);
+    press_interact(level);
+    check(level.gate_lever_on(1) && !level.gate_open(1),
+          "Gate B stays closed after its lever alone");
+    push_against_gate(level, 1, level.definition().gates[1].door);
+    travel(level, 1, 690, false);
+    travel(level, 1, 560, true);
+    check(level.gate_plate_occupied(1) && !level.gate_open(1),
+          "The Gate B lever operator cannot open it alone from the plate");
+}
+
 void verify_hard_retry_after_death(const prototype::PlayableLevelDefinition& hard) {
     prototype::DemoLevel level(hard);
     for (int tick = 0; tick < 240 && level.state() == RoundState::playing; ++tick) {
@@ -213,7 +239,7 @@ int main() {
         check(!medium.open() && !medium.gate_lever_on(0) &&
               !medium.gate_plate_occupied(0),
               "Medium restart resets its active puzzle only");
-        check(medium.position(0).x == 120 && medium.position(1).x == 1160,
+        check(medium.position(0).x == 120 && medium.position(1).x == medium_definition.spawns[1].x,
               "Medium restart restores its data-driven spawns");
 
         prototype::DemoLevel hard(hard_definition);
@@ -224,6 +250,7 @@ int main() {
               "Hard restart resets both gates and their levers");
         check(hard.position(0).x == 70 && hard.position(1).x == 110,
               "Hard restart restores its data-driven spawns");
+        verify_hard_gate_barriers(hard_definition);
         verify_hard_retry_after_death(hard_definition);
 
         std::cout << "PASS: native JSON, semantic validation, safe loading, three physical "
