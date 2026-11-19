@@ -92,6 +92,23 @@ The generated character/tile images are original procedural demo art. The font i
 adapted from the existing prototype atlas with its license retained. Regeneration
 is optional: `python tools/generate_rendering_assets.py` requires Pillow.
 
+## Playable game integration
+
+The optional `ui_prototype` is also built when the root SDL renderer option is
+enabled. Its existing window, event routing, audio, menus and game rules stay under
+the application's ownership. A borrowed `SdlRenderer` submits cached platform
+tiles and player sprites into the application's current frame without clearing or
+presenting it. Live ECS positions, movement direction, grounded state and animation
+time drive the sprites. Pause and restart freeze/reset animation. The application's
+camera settings are passed to the renderer, including the fit views for Medium and
+Hard. The adapter restores host draw color and blend mode after each submission.
+
+`ui_game_smoke` runs the existing automated Easy, Medium and Hard gameplay routes,
+plus live renderer checks for cache reuse, sprite position and pause behavior. Use
+`build-rendering/apps/ui_prototype/ui_prototype.exe` on this Windows checkout to
+play locally. This game still has no connected multiplayer session; the lobby says
+so in its UI. Networking is Henry's separate subsystem.
+
 Implementation and tests were produced with Codex assistance. Review and understand
 the code and record assistance according to the course/team policy; this document
 does not claim personal diary activity or team approval.

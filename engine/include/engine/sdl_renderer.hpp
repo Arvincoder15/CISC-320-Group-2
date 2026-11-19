@@ -2,6 +2,7 @@
 #include "engine/rendering.hpp"
 #include <filesystem>
 #include <memory>
+struct SDL_Renderer;
 namespace engine {
 struct SdlRendererOptions {
     std::string title{"Group 2 renderer"};
@@ -15,6 +16,9 @@ struct SdlRendererOptions {
 class SdlRenderer final : public Renderer {
 public:
     explicit SdlRenderer(const SdlRendererOptions& options = {});
+    // Host owns the renderer/window and must outlive this adapter. Logical size
+    // must match the host's presentation. Does not change host presentation mode.
+    SdlRenderer(SDL_Renderer* host_renderer, Vec2 logical_size);
     ~SdlRenderer() override;
     SdlRenderer(const SdlRenderer&) = delete;
     SdlRenderer& operator=(const SdlRenderer&) = delete;
@@ -23,10 +27,13 @@ public:
     const Camera& camera() const;
     std::size_t texture_count() const;
     void draw(std::span<const SpriteDraw> sprites) override;
+    // Draw into the current host frame without clearing or presenting it.
+    void submit(std::span<const SpriteDraw> sprites);
     // Captures the next frame before presentation (BMP). Useful for smoke tests.
     void capture_next_frame(const std::filesystem::path& path);
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
+    void render(std::span<const SpriteDraw> sprites, bool complete_frame);
 };
 }

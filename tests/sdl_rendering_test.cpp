@@ -86,4 +86,42 @@ int main(int, char**) { return run_test([] {
         CHECK(blended.r>=127 && blended.r<=128 && blended.b>=126 && blended.b<=128);
         renderer.draw({});
     }
+    // The shared-window adapter preserves existing host pixels and does not own
+    // the renderer. The host can draw and present after adapter destruction.
+    CHECK(SDL_InitSubSystem(SDL_INIT_VIDEO));
+    {
+        std::unique_ptr<SDL_Window,decltype(&SDL_DestroyWindow)> window(
+            SDL_CreateWindow("host test",64,64,SDL_WINDOW_HIDDEN),SDL_DestroyWindow);
+        CHECK(window);
+        std::unique_ptr<SDL_Renderer,decltype(&SDL_DestroyRenderer)> host(
+            SDL_CreateRenderer(window.get(),nullptr),SDL_DestroyRenderer);
+        CHECK(host);
+        CHECK(SDL_SetRenderDrawColor(host.get(),0,0,255,255));
+        CHECK(SDL_RenderClear(host.get()));
+        {
+            engine::SdlRenderer adapter(host.get(),{64,64});
+            adapter.load_texture("atlas",bmp);
+            engine::SpriteDraw sprite; sprite.asset_key="atlas";sprite.size={16,16};
+            adapter.submit(std::span(&sprite,1));
+            Surface pixels(SDL_RenderReadPixels(host.get(),nullptr),SDL_DestroySurface);
+            CHECK(pixels);
+            CHECK(pixel(pixels.get(),2,2).r==255);
+            CHECK(pixel(pixels.get(),50,50).b==255);
+            engine::SpriteDraw overlay;overlay.position={20,20};overlay.size={10,10};
+            overlay.tint={255,0,0,128};
+            adapter.submit(std::span(&overlay,1));
+            pixels.reset(SDL_RenderReadPixels(host.get(),nullptr));
+            const auto blended=pixel(pixels.get(),22,22);
+            CHECK(blended.r>=127 && blended.r<=128 && blended.b>=126 && blended.b<=128);
+            Uint8 r{},g{},b{},a{};SDL_BlendMode mode{};
+            CHECK(SDL_GetRenderDrawColor(host.get(),&r,&g,&b,&a));
+            CHECK(r==0 && g==0 && b==255 && a==255);
+            CHECK(SDL_GetRenderDrawBlendMode(host.get(),&mode));
+            CHECK(mode==SDL_BLENDMODE_NONE);
+        }
+        CHECK(SDL_SetRenderDrawColor(host.get(),255,255,255,255));
+        CHECK(SDL_RenderPoint(host.get(),30,30));
+        CHECK(SDL_RenderPresent(host.get()));
+    }
+    SDL_QuitSubSystem(SDL_INIT_VIDEO);
 }); }

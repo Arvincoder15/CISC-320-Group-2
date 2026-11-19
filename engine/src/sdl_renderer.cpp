@@ -18,34 +18,51 @@ template<class T, auto Destroy> struct Deleter { void operator()(T* p) const { i
 using Window = std::unique_ptr<SDL_Window, Deleter<SDL_Window, SDL_DestroyWindow>>;
 using NativeRenderer = std::unique_ptr<SDL_Renderer, Deleter<SDL_Renderer, SDL_DestroyRenderer>>;
 using Surface = std::unique_ptr<SDL_Surface, Deleter<SDL_Surface, SDL_DestroySurface>>;
+struct DrawState {
+    SDL_Renderer* renderer;
+    Uint8 r{},g{},b{},a{};
+    SDL_BlendMode blend{};
+    explicit DrawState(SDL_Renderer* value):renderer(value) {
+        require(SDL_GetRenderDrawColor(renderer,&r,&g,&b,&a),"Read host color");
+        require(SDL_GetRenderDrawBlendMode(renderer,&blend),"Read host blend mode");
+    }
+    ~DrawState() {
+        SDL_SetRenderDrawColor(renderer,r,g,b,a);
+        SDL_SetRenderDrawBlendMode(renderer,blend);
+    }
+};
 bool finite(Vec2 v) { return std::isfinite(v.x) && std::isfinite(v.y); }
 }
 struct SdlRenderer::Impl {
     Video video;
     Window window;
     NativeRenderer renderer;
+    SDL_Renderer* target{};
     ResourceCache<SDL_Texture> textures;
     std::unordered_map<std::string, std::string> paths;
     Camera camera;
     RenderColor background;
     std::filesystem::path capture;
-    explicit Impl(const SdlRendererOptions& o)
+    explicit Impl(const SdlRendererOptions& o, SDL_Renderer* host = nullptr)
         : textures([this](const std::string& path) {
             Surface surface(SDL_LoadBMP(path.c_str()));
             require(bool(surface), "Load BMP");
             // Magenta is the transparent key for the portable RGB BMP asset format.
             require(SDL_SetSurfaceColorKey(surface.get(), true, SDL_MapSurfaceRGB(surface.get(),255,0,255)), "Set texture color key");
-            std::shared_ptr<SDL_Texture> texture(SDL_CreateTextureFromSurface(renderer.get(), surface.get()), SDL_DestroyTexture);
+            std::shared_ptr<SDL_Texture> texture(SDL_CreateTextureFromSurface(target, surface.get()), SDL_DestroyTexture);
             require(bool(texture), "Create texture");
             require(SDL_SetTextureScaleMode(texture.get(), SDL_SCALEMODE_NEAREST), "Set texture filtering");
             require(SDL_SetTextureBlendMode(texture.get(), SDL_BLENDMODE_BLEND), "Set texture blending");
             return texture;
         }), background(o.background) {
+        camera.viewport = {static_cast<float>(o.width), static_cast<float>(o.height)};
+        if(host) { target=host; return; }
         window.reset(SDL_CreateWindow(o.title.c_str(), o.width, o.height,
             SDL_WINDOW_RESIZABLE | (o.hidden ? SDL_WINDOW_HIDDEN : 0)));
         require(bool(window), "Create window");
         renderer.reset(SDL_CreateRenderer(window.get(), nullptr));
         require(bool(renderer), "Create renderer");
+        target=renderer.get();
         // Some software drivers cannot synchronize; rendering remains usable.
         if(o.vsync) SDL_SetRenderVSync(renderer.get(), 1);
         require(SDL_SetRenderDrawBlendMode(renderer.get(), SDL_BLENDMODE_BLEND), "Set blend mode");
@@ -59,6 +76,13 @@ SdlRenderer::SdlRenderer(const SdlRendererOptions& options) {
     impl_ = std::make_unique<Impl>(options);
 }
 SdlRenderer::~SdlRenderer() = default;
+SdlRenderer::SdlRenderer(SDL_Renderer* host, Vec2 size) {
+    if(!host || !finite(size) || size.x<=0 || size.y<=0 || size.x>16384 || size.y>16384 ||
+        std::floor(size.x)!=size.x || std::floor(size.y)!=size.y)
+        throw std::invalid_argument("Invalid host renderer or logical size");
+    SdlRendererOptions options; options.width=static_cast<int>(size.x);options.height=static_cast<int>(size.y);
+    impl_=std::make_unique<Impl>(options,host);
+}
 void SdlRenderer::load_texture(const std::string& key, const std::filesystem::path& path) {
     if(key.empty()) throw std::invalid_argument("Empty texture key");
     const auto canonical = std::filesystem::canonical(path).string();
@@ -83,6 +107,12 @@ void SdlRenderer::capture_next_frame(const std::filesystem::path& path) {
     impl_->capture = path;
 }
 void SdlRenderer::draw(std::span<const SpriteDraw> sprites) {
+    render(sprites,true);
+}
+void SdlRenderer::submit(std::span<const SpriteDraw> sprites) {
+    render(sprites,false);
+}
+void SdlRenderer::render(std::span<const SpriteDraw> sprites, bool complete_frame) {
     struct Prepared { const SpriteDraw* draw; std::shared_ptr<SDL_Texture> texture; SDL_FRect dest; };
     std::vector<Prepared> ordered;
     ordered.reserve(sprites.size());
@@ -124,10 +154,14 @@ void SdlRenderer::draw(std::span<const SpriteDraw> sprites) {
         ordered.push_back({&draw,std::move(texture),dest});
     }
     std::stable_sort(ordered.begin(),ordered.end(),[](const auto& a,const auto& b){ return a.draw->layer < b.draw->layer; });
-    auto* r=impl_->renderer.get();
+    auto* r=impl_->target;
+    DrawState previous(r);
+    require(SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_BLEND), "Set drawing blend mode");
     auto bg=impl_->background;
-    require(SDL_SetRenderDrawColor(r,bg.r,bg.g,bg.b,bg.a), "Set clear color");
-    require(SDL_RenderClear(r), "Clear frame");
+    if(complete_frame) {
+        require(SDL_SetRenderDrawColor(r,bg.r,bg.g,bg.b,bg.a), "Set clear color");
+        require(SDL_RenderClear(r), "Clear frame");
+    }
     for(const auto& item : ordered) {
         const auto& d=*item.draw;
         const auto c=d.tint;
@@ -150,6 +184,6 @@ void SdlRenderer::draw(std::span<const SpriteDraw> sprites) {
         require(SDL_SaveBMP(surface.get(),impl_->capture.string().c_str()), "Save frame");
         impl_->capture.clear();
     }
-    require(SDL_RenderPresent(r), "Present frame");
+    if(complete_frame) require(SDL_RenderPresent(r), "Present frame");
 }
 }

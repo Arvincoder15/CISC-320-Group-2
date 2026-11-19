@@ -5,6 +5,7 @@
 #include "engine/interaction.hpp"
 #include "engine/tools.hpp"
 #include "engine/resource_files.hpp"
+#include "engine/sdl_renderer.hpp"
 #include "demo_level.hpp"
 #include "font_metrics.hpp"
 #include "demo_walkthrough.hpp"
@@ -61,6 +62,7 @@ std::array<prototype::PlayableLevelDefinition, 3> load_campaign_definitions() {
 
 GameplayCamera gameplay_camera(const std::string& level_name) {
     if (level_name == "Level 3 - Hard") return {0.75F, 160.0F, 150.0F};
+    if (level_name == "Level 2 - Medium") return {0.88F, 76.0F, 92.0F};
     return {};
 }
 
@@ -89,6 +91,10 @@ public:
         if (audio_) SDL_ResumeAudioStreamDevice(audio_.get());
         else std::cerr << "Audio unavailable: " << SDL_GetError() << '\n';
         load_font();
+        world_renderer_=std::make_unique<engine::SdlRenderer>(r,engine::Vec2{width,height});
+        const auto render_assets=asset_directory().parent_path()/"rendering-assets";
+        world_renderer_->load_texture("characters",render_assets/"characters.bmp");
+        world_renderer_->load_texture("tiles",render_assets/"tiles.bmp");
         SDL_SetRenderDrawBlendMode(r,SDL_BLENDMODE_BLEND);
         reset_game();
         initialize_level_inspector();
@@ -113,6 +119,7 @@ public:
     }
     // Uses actual event routing and rendering; no sockets or external GUI driver required.
     void smoke_test(const std::filesystem::path& captures) {
+        if(!captures.empty()) std::filesystem::create_directories(captures);
         const auto check = [](bool ok, const char* message) { if (!ok) throw std::runtime_error(message); };
         check(assets_.size() == 1, "Startup cached the font atlas");
         check(assets_.load("font.bmp") == assets_.load("./font.bmp") && assets_.size() == 1,
@@ -120,11 +127,25 @@ public:
         draw(); click(640, 245); check(screen_ == Screen::play, "Local Play navigation");
         key(SDL_SCANCODE_D, true); key(SDL_SCANCODE_RIGHT, true);
         update(0.05F); check(position(0).x > 150 && position(1).x > 1130, "Independent keyboard movement");
+        draw();
+        check(world_renderer_->texture_count()==2, "Gameplay caches both rendering atlases");
+        for(std::size_t i=0;i<2;++i) {
+            check(last_player_draws_[i].entity==game_.player(i).entity &&
+                  std::abs(last_player_draws_[i].position.x-(position(i).x-27.2F))<0.001F,
+                  "Rendered sprite follows the live ECS player");
+        }
+        update(0.1F);
+        check(animations_[0].frame()>0 && animations_[1].frame()>0, "Moving players advance sprite-sheet animation");
+        draw();
+        if(!captures.empty()) save_frame(captures/"11-level-1-easy.bmp");
         key(SDL_SCANCODE_W, true); update(0.05F);
         check(position(0).y < 580 && std::abs(position(1).y-580)<1, "Independent jump");
         SDL_Event focus{}; focus.type = SDL_EVENT_WINDOW_FOCUS_LOST; handle(focus);
         check(screen_ == Screen::pause, "Focus loss pauses");
         check(inputs_[0].consume().move_x == 0 && inputs_[1].consume().move_x == 0, "Focus clears input");
+        const auto paused_frame=animations_[0].frame();
+        update(0.5F);
+        check(animations_[0].frame()==paused_frame, "Pause freezes character animation");
         draw(); click(640, 430); check(screen_ == Screen::settings, "Pause settings navigation");
         draft_.audio.master_volume = 0.3F; draft_.audio.sound_effects = false;
         apply_settings();
@@ -153,6 +174,8 @@ public:
         };
         check(has_centered_platform(330.0F) && has_centered_platform(950.0F),
               "Runtime Medium loads one centered upper platform for each player");
+        draw();
+        if(!captures.empty()) save_frame(captures/"12-level-2-medium.bmp");
         prototype::verification::solve_medium(game_); update(0.01F);
         check(screen_ == Screen::won, "Physical route completes Medium");
         draw(); click(270, 535);
@@ -164,9 +187,9 @@ public:
               "Hard completion reaches the final campaign state");
         exercise_inspector(check);
         check(gameplay_camera(campaign_[0].name).scale == 1.0F &&
-              gameplay_camera(campaign_[1].name).scale == 1.0F &&
-              gameplay_camera(campaign_[2].name).scale < 1.0F,
-              "Only Hard uses the zoomed gameplay camera");
+              gameplay_camera(campaign_[1].name).scale < 1.0F &&
+              gameplay_camera(campaign_[2].name).scale < gameplay_camera(campaign_[1].name).scale,
+              "Medium and Hard camera frames fit their taller levels");
         game_.load(campaign_[2]);
         campaign_index_ = 2;
         screen_ = Screen::play;
@@ -223,6 +246,12 @@ public:
 private:
     Window window_{nullptr, SDL_DestroyWindow};
     Renderer renderer_{nullptr, SDL_DestroyRenderer};
+    // Destroy cached engine textures before the host renderer/window.
+    std::unique_ptr<engine::SdlRenderer> world_renderer_;
+    std::array<engine::SpriteAnimation,2> animations_{
+        engine::SpriteAnimation(4,4,{32,32},10),engine::SpriteAnimation(4,4,{32,32},10)};
+    std::array<bool,2> facing_left_{};
+    std::array<engine::SpriteDraw,2> last_player_draws_{};
     Audio audio_{nullptr, SDL_DestroyAudioStream};
     engine::FileResourceManager assets_;
     std::filesystem::path path_;
@@ -259,16 +288,19 @@ private:
         clear_input(); screen_ = next; focus_ = 0; controls_ = false;
         address_active_ = false; level_path_active_ = false; SDL_StopTextInput(window_.get());
     }
-    void reset_game() { clear_input(); game_.restart(); }
+    void reset_animation() { for(auto& animation:animations_) animation.reset(); facing_left_={}; }
+    void reset_game() { clear_input(); game_.restart(); reset_animation(); }
     void start_campaign() {
         clear_input();
         campaign_index_ = 0;
+        reset_animation();
         game_.load(campaign_[campaign_index_]);
     }
     void advance_campaign() {
         if (campaign_index_ + 1 >= campaign_.size()) return;
         clear_input();
         game_.load(campaign_[++campaign_index_]);
+        reset_animation();
         go(Screen::play);
     }
     void update_inspection_metrics(Uint64 frame_time_ms) {
@@ -827,6 +859,13 @@ private:
         elapsed_+=dt;
         if(screen_!=Screen::play || dt<=0) return;
         game_.tick({inputs_[0].consume(),inputs_[1].consume()},dt);
+        for(std::size_t i=0;i<2;++i) {
+            const auto& state=game_.player(i);
+            if(std::abs(state.body.velocity.x)>0.01F) {
+                facing_left_[i]=state.body.velocity.x<0;
+                animations_[i].advance(dt);
+            } else animations_[i].reset();
+        }
         if(game_.state()==elemental_coop::RoundState::lost) { go(Screen::lost); tone(); }
         if(game_.state()==elemental_coop::RoundState::won) { go(Screen::won); tone(); }
     }
@@ -844,13 +883,15 @@ private:
     void stone(prototype::Rect r) {
         rect(r.x+3,r.y+7,r.w,r.h,{0,16,32,180});
         const int count=std::max(1,int(r.w/48)); const float tile=r.w/count;
+        std::vector<engine::SpriteDraw> tiles;
+        tiles.reserve(static_cast<std::size_t>(count));
         for(int i=0;i<count;++i) {
             const float x=r.x+float(i)*tile;
-            rounded(x+1,r.y,tile-2,r.h,4,{36,68,104,255});
-            rect(x+5,r.y+2,tile-10,3,{142,188,224,255});
-            rect(x+4,r.y+6,tile-8,3,{66,108,153,255});
-            rect(x+tile-4,r.y+8,2,r.h-12,{14,42,71,255});
+            engine::SpriteDraw draw;
+            draw.position={x,r.y};draw.size={tile,r.h};draw.asset_key="tiles";
+            draw.source=engine::RenderRect{0,0,32,32};tiles.push_back(draw);
         }
+        world_renderer_->submit(tiles);
     }
     void portal(float x, float surface_y, bool fire) {
         const auto c = fire ? orange : cyan;
@@ -871,6 +912,10 @@ private:
              ? "All gates open - reach your matching exits"
              : "Coordinate the linked levers and pressure plates", 1.5F, white);
         scene_camera_ = gameplay_camera(definition.name);
+        engine::Camera camera;
+        camera.viewport={width,height};camera.zoom=scene_camera_.scale;
+        camera.position={-scene_camera_.offset_x/camera.zoom,-scene_camera_.offset_y/camera.zoom};
+        world_renderer_->set_camera(camera);
         for (const auto& platform : definition.platforms) stone(platform);
         for (const auto& pool : definition.hazards) {
             const auto c = pool.kind == elemental_coop::Hazard::lava ? SDL_Color{255, 125, 0, 255}
@@ -887,8 +932,9 @@ private:
                        pool.box.y - 5 - std::sin(elapsed_ * 2 + j) * 5, 2, c);
             const std::string label = pool.kind == elemental_coop::Hazard::lava ? "LAVA"
                 : pool.kind == elemental_coop::Hazard::water ? "WATER" : "TOXIC";
-            text(pool.box.x + (pool.box.w - text_width(label, 1.6F)) / 2,
-                 655, label, 1.6F, c);
+            const float label_scale=std::min(1.6F,std::max(0.6F,(pool.box.w-8)*1.6F/text_width(label,1.6F)));
+            text(pool.box.x + (pool.box.w - text_width(label, label_scale)) / 2,
+                 655, label, label_scale, c);
         }
 
         for (std::size_t i = 0; i < definition.exits.size(); ++i) {
@@ -939,7 +985,15 @@ private:
 
         for (std::size_t i = 0; i < elemental_coop::player_count; ++i) {
             const auto p = position(i);
-            character(p.x, p.y, i == 0, 0.85F);
+            engine::SpriteDraw sprite;
+            sprite.entity=game_.player(i).entity;
+            sprite.position={p.x-27.2F,p.y-54.4F};sprite.size={54.4F,54.4F};
+            sprite.asset_key="characters";sprite.layer=10;sprite.flip_x=facing_left_[i];
+            sprite.source=animations_[i].source();
+            if(!game_.player(i).grounded) sprite.source->x=64; // airborne pose
+            sprite.source->y+=static_cast<float>(i)*32;
+            last_player_draws_[i]=sprite;
+            world_renderer_->submit(std::span(&sprite,1));
             if (game_.player(i).at_exit) circle(p.x, p.y - 72, 4, green);
         }
         scene_camera_ = {};
