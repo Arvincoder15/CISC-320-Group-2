@@ -22,7 +22,8 @@
         "x": 1130,
         "y": 580
       }
-    }
+    },
+    {"id": "spawn-acid-1", "prefab": "acid_enemy", "position": {"x": 736, "y": 350}}
   ],
   "objects": [
     {

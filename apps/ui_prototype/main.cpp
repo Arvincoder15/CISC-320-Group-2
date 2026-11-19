@@ -143,9 +143,14 @@ public:
         SDL_Event focus{}; focus.type = SDL_EVENT_WINDOW_FOCUS_LOST; handle(focus);
         check(screen_ == Screen::pause, "Focus loss pauses");
         check(inputs_[0].consume().move_x == 0 && inputs_[1].consume().move_x == 0, "Focus clears input");
+        const auto paused_enemy = game_.enemy_position(0);
+        const auto paused_enemy_animation = game_.enemies()[0].animation_time;
         const auto paused_frame=animations_[0].frame();
         update(0.5F);
         check(animations_[0].frame()==paused_frame, "Pause freezes character animation");
+        check(game_.enemy_position(0).x == paused_enemy.x &&
+              game_.enemies()[0].animation_time == paused_enemy_animation,
+              "Pause freezes acid enemy movement and animation");
         draw(); click(640, 430); check(screen_ == Screen::settings, "Pause settings navigation");
         draft_.audio.master_volume = 0.3F; draft_.audio.sound_effects = false;
         apply_settings();
@@ -155,6 +160,18 @@ public:
         reset_game(); screen_ = Screen::play;
         game_.touch_hazard(0,elemental_coop::Hazard::water); update(0.01F);
         check(screen_ == Screen::lost, "Hazard triggers Game Over");
+        auto encounter = campaign_[0];
+        const auto acid_spawn = encounter.enemy_spawns[0].position;
+        // Start on a separate ledge, then drop onto the slime's floor.
+        encounter.platforms.push_back({acid_spawn.x + 48, acid_spawn.y - 50, 48, 12});
+        encounter.spawns[0] = {acid_spawn.x + 72, acid_spawn.y - 50};
+        game_.load(encounter); screen_ = Screen::play;
+        key(SDL_SCANCODE_A, true);
+        for (int tick = 0; tick < 24 && screen_ == Screen::play; ++tick) update(0.01F);
+        key(SDL_SCANCODE_A, false);
+        for (int tick = 0; tick < 180 && screen_ == Screen::play; ++tick) update(0.01F);
+        check(screen_ == Screen::lost, "Acid enemy contact routes to Game Over");
+        game_.load(campaign_[0]);
         reset_game(); screen_ = Screen::play;
         prototype::verification::solve(game_); update(0.01F);
         check(screen_ == Screen::won, "Physical route reaches both exits");
@@ -250,7 +267,6 @@ private:
     std::unique_ptr<engine::SdlRenderer> world_renderer_;
     std::array<engine::SpriteAnimation,2> animations_{
         engine::SpriteAnimation(4,4,{32,32},10),engine::SpriteAnimation(4,4,{32,32},10)};
-    std::array<bool,2> facing_left_{};
     std::array<engine::SpriteDraw,2> last_player_draws_{};
     Audio audio_{nullptr, SDL_DestroyAudioStream};
     engine::FileResourceManager assets_;
@@ -288,7 +304,7 @@ private:
         clear_input(); screen_ = next; focus_ = 0; controls_ = false;
         address_active_ = false; level_path_active_ = false; SDL_StopTextInput(window_.get());
     }
-    void reset_animation() { for(auto& animation:animations_) animation.reset(); facing_left_={}; }
+    void reset_animation() { for(auto& animation:animations_) animation.reset(); }
     void reset_game() { clear_input(); game_.restart(); reset_animation(); }
     void start_campaign() {
         clear_input();
@@ -862,7 +878,6 @@ private:
         for(std::size_t i=0;i<2;++i) {
             const auto& state=game_.player(i);
             if(std::abs(state.body.velocity.x)>0.01F) {
-                facing_left_[i]=state.body.velocity.x<0;
                 animations_[i].advance(dt);
             } else animations_[i].reset();
         }
@@ -983,12 +998,33 @@ private:
                  plate_occupied ? green : cyan);
         }
 
+        // Acid slimes use the pool's exact green, with animated feet and hostile eyes.
+        // Their animation clock belongs to the runtime, so menus and pause freeze it.
+        for (std::size_t i = 0; i < game_.enemies().size(); ++i) {
+            const auto& enemy = game_.enemies()[i];
+            const auto p = game_.enemy_position(i);
+            const float bob = std::sin(enemy.animation_time * 12) * 2;
+            const SDL_Color acid{87, 235, 11, 255};
+            rounded(p.x - 16, p.y - 28 + bob, 32, 26 - bob, 10, {31, 102, 6, 255});
+            rounded(p.x - 15, p.y - 32 + bob, 30, 27 - bob, 10, acid);
+            for (int foot = 0; foot < 3; ++foot)
+                circle(p.x - 10 + foot * 10, p.y - 3,
+                       4 + std::sin(enemy.animation_time * 12 + foot) * 1.2F, acid);
+            circle(p.x - 7, p.y - 25 + bob, 3, {185, 255, 119, 255});
+            const float look = enemy.facing_left ? -2.0F : 2.0F;
+            for (float eye : {-7.0F, 7.0F}) {
+                rounded(p.x + eye - 4, p.y - 21 + bob, 8, 8, 2, white);
+                rect(p.x + eye + look - 2, p.y - 20 + bob, 4, 6, navy);
+            }
+            rect(p.x - 5, p.y - 9 + bob, 10, 3, navy);
+        }
+
         for (std::size_t i = 0; i < elemental_coop::player_count; ++i) {
             const auto p = position(i);
             engine::SpriteDraw sprite;
             sprite.entity=game_.player(i).entity;
             sprite.position={p.x-27.2F,p.y-54.4F};sprite.size={54.4F,54.4F};
-            sprite.asset_key="characters";sprite.layer=10;sprite.flip_x=facing_left_[i];
+            sprite.asset_key="characters";sprite.layer=10;sprite.flip_x=game_.player_facing_left(i);
             sprite.source=animations_[i].source();
             if(!game_.player(i).grounded) sprite.source->x=64; // airborne pose
             sprite.source->y+=static_cast<float>(i)*32;
@@ -997,6 +1033,8 @@ private:
             if (game_.player(i).at_exit) circle(p.x, p.y - 72, 4, green);
         }
         scene_camera_ = {};
+        text(420, 103, "ACID ENEMIES: " + std::to_string(game_.enemies().size()) + " - jump over them", 1.1F,
+             {87, 235, 11, 255});
         text(30, 79, "FIRE  A / D / W     WATER  ARROWS     E  LEVER", 1.1F, muted);
         text(420, 79, game_.all_gates_open()
              ? "Unlocked - both matching exits are required"

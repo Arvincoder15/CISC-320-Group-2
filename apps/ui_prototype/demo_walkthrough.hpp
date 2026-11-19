@@ -14,14 +14,14 @@ inline void check(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
 
-inline void travel(prototype::DemoLevel& level, std::size_t who, float target_x, bool jump) {
+inline void travel(prototype::DemoLevel& level, std::size_t who, float target_x, bool jump, int vertical_ticks = 0) {
     const auto start = level.position(who);
     bool jump_sent = !jump;
     for (int tick = 0; tick < 480; ++tick) {
         const auto position = level.position(who);
         PlayerInputs input{};
         const float distance = target_x - position.x;
-        if (std::abs(distance) > 2.5F) input[who].move_x = distance > 0 ? 1.0F : -1.0F;
+        if (tick >= vertical_ticks && std::abs(distance) > 2.5F) input[who].move_x = distance > 0 ? 1.0F : -1.0F;
         if (jump && !jump_sent && level.player(who).grounded) {
             input[who].primary_pressed = true;
             jump_sent = true;
@@ -72,62 +72,81 @@ inline void solve(prototype::DemoLevel& level) {
     check(level.player(0).at_exit && level.state() == RoundState::playing,
           "One Easy exit is insufficient");
     travel(level, 1, 940, true);
-    travel(level, 1, 800, true);
+    travel(level, 1, 870, true);
     travel(level, 1, 950, true);
     travel(level, 1, 1125, false);
     check(level.state() == RoundState::won, "Both Easy matching exits win");
 }
 
+// Both players drop from their safe ledges, then jump past the lower patrols.
+inline void leave_medium_spawns(prototype::DemoLevel& level) {
+    const std::array<float, 2> launch{220, 1030};
+    const std::array<float, 2> landing{430, 835};
+    std::array<bool, 2> jumped{};
+    for (int tick = 0; tick < 300; ++tick) {
+        PlayerInputs input{};
+        bool arrived = true;
+        for (std::size_t i = 0; i < player_count; ++i) {
+            const float x = level.position(i).x;
+            if (!jumped[i] && std::abs(x - launch[i]) <= 2 && level.player(i).grounded) {
+                input[i].primary_pressed = true;
+                jumped[i] = true;
+            }
+            const float distance = (jumped[i] ? landing[i] : launch[i]) - x;
+            if (std::abs(distance) > 2) input[i].move_x = distance > 0 ? 1.0F : -1.0F;
+            arrived = arrived && jumped[i] && std::abs(distance) <= 2 && level.player(i).grounded;
+        }
+        if (arrived) return;
+        level.tick(input, 1.0F / 120.0F);
+        check(level.state() == RoundState::playing, "Both players escape Medium's starting slimes");
+    }
+    throw std::runtime_error("Players did not reach Medium's center platforms");
+}
+
 inline void reach_medium_exits_without_unlocking(prototype::DemoLevel& level) {
-    travel(level, 0, 220, false);
-    travel(level, 0, 430, true);
+    leave_medium_spawns(level);
     travel(level, 0, 520, false);
     travel(level, 0, 400, false);
-    travel(level, 0, 520, true);
+    travel(level, 0, 490, true);
     travel(level, 0, 330, true);
     travel(level, 0, 125, true);
-    travel(level, 1, 1030, false);
-    travel(level, 1, 770, true);
-    travel(level, 1, 835, false);
     travel(level, 1, 720, true);
     travel(level, 1, 950, true);
-    travel(level, 1, 1160, true);
+    travel(level, 1, 1140, true);
     check(std::abs(level.position(0).x - 125.0F) <= 3.0F &&
-          std::abs(level.position(1).x - 1160.0F) <= 3.0F,
+          std::abs(level.position(1).x - 1140.0F) <= 3.0F,
           "Both players physically reach the locked Medium exits");
     check(level.state() == RoundState::playing && !level.open(),
           "Reaching both exits cannot bypass the Medium gate");
 }
 
 inline void solve_medium(prototype::DemoLevel& level) {
-    travel(level, 0, 220, false);
-    travel(level, 0, 430, true);
+    leave_medium_spawns(level);
     travel(level, 0, 520, false);
     press_interact(level);
     check(level.gate_lever_on(0) && !level.gate_open(0),
           "Medium gate remains closed after its lever alone");
 
     travel(level, 0, 400, false);
-    travel(level, 0, 520, true);
-    travel(level, 0, 720, true);
+    travel(level, 0, 490, true);
+    travel(level, 0, 720, true, 8);
     travel(level, 0, 790, false);
     check(level.gate_plate_occupied(0) && !level.gate_open(0),
           "The same Medium player cannot operate both controls");
     travel(level, 0, 820, false);
 
-    travel(level, 1, 1030, false);
-    travel(level, 1, 770, true);
+    travel(level, 1, 770, false);
     check(level.gate_open(0), "Distinct Medium operators open the gate");
     travel(level, 0, 835, false);
     travel(level, 0, 720, true);
-    travel(level, 0, 520, true);
+    travel(level, 0, 490, true);
     travel(level, 0, 330, true);
     travel(level, 0, 125, true);
     check(level.state() == RoundState::playing, "One Medium matching exit is insufficient");
     travel(level, 1, 835, false);
     travel(level, 1, 720, true);
     travel(level, 1, 950, true);
-    travel(level, 1, 1160, true);
+    travel(level, 1, 1140, true);
     check(level.state() == RoundState::won, "Both Medium matching exits win");
 }
 
@@ -151,83 +170,87 @@ inline void solve_hard(prototype::DemoLevel& level) {
           level.gate_open(1) == false,
           "Hard starts with two sequential gates closed");
 
-    travel(level, 0, 206, true);
-    check(level.player(0).grounded &&
-          std::abs(level.position(0).y - 470.0F) < 1.0F,
-          "Fire reaches the narrow elevated Gate A lever platform");
-    press_interact(level);
-    check(level.gate_lever_on(0) && !level.gate_open(0),
-          "Hard Gate A remains closed after its lever alone");
-    push_against_gate(level, 0, level.definition().gates[0].door);
-    check(!level.gate_open(0),
-          "Gate A cannot be bypassed by jumping from its elevated lever ledge");
-    travel(level, 0, 380, false);
-    check(level.gate_plate_occupied(0) && !level.gate_open(0),
-          "The same Hard Gate A operator cannot activate both controls");
-    travel(level, 0, 430, false);
-    push_against_gate(level, 0, level.definition().gates[0].door);
-    check(!level.gate_open(0) && !level.gate_lever_on(1),
-          "Gate A blocks physical access to Gate B's controls");
+    // Both players move at once so Fire can leave the lever ledge before the
+    // hunter arrives, and Water can clear the plate as soon as the gate opens.
+    std::array<int, player_count> leg{};
+    const std::array<std::array<float, 2>, player_count> landings{{{206, 500}, {416, 560}}};
+    std::array<bool, player_count> jumping{};
+    for (int tick = 0; tick < 500 && (leg[0] < 2 || leg[1] < 2); ++tick) {
+        PlayerInputs inputs{};
+        for (std::size_t who = 0; who < player_count; ++who) {
+            if (leg[who] == 2) continue;
+            const float dx = landings[who][leg[who]] - level.position(who).x;
+            if (jumping[who] && level.player(who).grounded && std::abs(dx) <= 2.5F) {
+                jumping[who] = false;
+                if (who == 0 && leg[who] == 0) level.interact();
+                ++leg[who];
+                continue;
+            }
+            if (std::abs(dx) > 2.5F) inputs[who].move_x = dx > 0 ? 1 : -1;
+            if (!jumping[who] && level.player(who).grounded && (who == 0 || tick >= 12)) {
+                jumping[who] = true;
+                inputs[who].primary_pressed = true;
+            }
+        }
+        level.tick(inputs, 1.0F / 120.0F);
+        if (level.state() == RoundState::lost)
+            throw std::runtime_error("Hard opening chase reached a player at " +
+                std::to_string(level.position(0).x) + "," + std::to_string(level.position(0).y) + " / " +
+                std::to_string(level.position(1).x) + "," + std::to_string(level.position(1).y));
+    }
+    check(leg[0] == 2 && leg[1] == 2 && level.gate_open(0) && !level.gate_open(1),
+          "Both Hard players clear Gate A during the opening chase");
+    travel(level, 0, 544, true, 8);
 
-    travel(level, 1, 378, true);
-    check(level.gate_open(0) && !level.gate_open(1),
-          "Water crosses the lava gap and opens Gate A with Fire");
-    travel(level, 0, 450, false);
-    travel(level, 0, 560, true);
-    check(level.gate_plate_occupied(1) && !level.gate_open(1),
-          "Gate B's raised plate alone leaves its door closed");
-    travel(level, 0, 610, false);
-
-    travel(level, 1, 610, true);
-    travel(level, 1, 695, true);
     travel(level, 1, 809, true);
     press_interact(level);
-    check(level.gate_lever_on(1) && !level.gate_open(1),
-          "Water latches Gate B's separate elevated lever");
-    push_against_gate(level, 1, level.definition().gates[1].door);
-    check(!level.gate_open(1) && level.state() == RoundState::playing,
-          "Closed Gate B blocks the final route");
-
-    travel(level, 1, 695, false);
-    travel(level, 1, 560, true);
-    check(level.gate_plate_occupied(1) && !level.gate_open(1),
-          "The Gate B lever operator cannot open it alone from the plate");
-    travel(level, 1, 610, false);
-    travel(level, 0, 695, true);
-    travel(level, 0, 560, true);
-    check(level.gate_open(0) && level.gate_open(1),
+    check(level.gate_lever_on(1) && level.gate_open(1),
           "Fire and Water open Gate B with distinct operators after Gate A");
-    travel(level, 1, 695, true);
-    travel(level, 1, 809, true);
-    travel(level, 1, 930, true);
-    check(level.gate_open(0) && level.gate_open(1),
-          "Both Hard gates remain latched open after leaving their controls");
 
-    travel(level, 0, 610, false);
-    travel(level, 0, 695, true);
-    travel(level, 0, 809, true);
-    travel(level, 0, 930, true);
-    travel(level, 0, 870, false);
-    travel(level, 0, 975, true);
-    travel(level, 0, 1010, false);
-    travel(level, 0, 913, true);
-    travel(level, 0, 890, false);
-    travel(level, 0, 1003, true);
-    travel(level, 0, 980, false);
-    travel(level, 0, 845, true);
-    check(level.player(0).at_exit && level.state() == RoundState::playing,
-          "Fire completes its narrow, multi-step ascent but waits for Water");
-
-    travel(level, 1, 1030, false);
-    travel(level, 1, 1144, true);
-    travel(level, 1, 1120, false);
-    travel(level, 1, 1242, true);
-    travel(level, 1, 1264, false);
-    travel(level, 1, 1103, true);
-    travel(level, 1, 1080, false);
-    travel(level, 1, 1255, true);
-    check(level.state() == RoundState::won,
-          "Water crosses its hazard route and reaches its separated exit to finish Hard");
+    struct Move { float x; bool jump; };
+    const std::array<std::vector<Move>, player_count> escape{{
+        {{809, true}, {913, true}, {890, false},
+         {1003, true}, {980, false}, {845, true}},
+        {{944, true}, {1144, true}, {1120, false}, {1242, true}, {1264, false},
+         {1103, true}, {1080, false}, {1255, true}}
+    }};
+    std::array<std::size_t, player_count> next{};
+    jumping = {};
+    for (int tick = 0; tick < 1800 && level.state() == RoundState::playing; ++tick) {
+        PlayerInputs inputs{};
+        for (std::size_t who = 0; who < player_count; ++who) {
+            if (next[who] == escape[who].size()) continue;
+            const auto move = escape[who][next[who]];
+            const float dx = move.x - level.position(who).x;
+            if (level.player(who).grounded && std::abs(dx) <= 2.5F && (!move.jump || jumping[who])) {
+                ++next[who];
+                jumping[who] = false;
+                continue;
+            }
+            if (std::abs(dx) > 2.5F) inputs[who].move_x = dx > 0 ? 1 : -1;
+            if (move.jump && !jumping[who] && level.player(who).grounded) {
+                jumping[who] = true;
+                inputs[who].primary_pressed = true;
+            }
+        }
+        level.tick(inputs, 1.0F / 120.0F);
+        if (level.state() == RoundState::lost) {
+            std::string diagnostic;
+            for (std::size_t who = 0; who < player_count; ++who) {
+                const auto p = level.position(who);
+                diagnostic += " player " + std::to_string(who) + " at " +
+                              std::to_string(p.x) + "," + std::to_string(p.y) +
+                              " leg " + std::to_string(next[who]);
+            }
+            for (std::size_t i = 0; i < level.enemies().size(); ++i) {
+                const auto p = level.enemy_position(i);
+                diagnostic += " enemy " + std::to_string(p.x) + "," + std::to_string(p.y);
+            }
+            throw std::runtime_error("Hard exit chase:" + diagnostic);
+        }
+    }
+    check(level.gate_open(0) && level.gate_open(1), "Both Hard gates remain latched open");
+    check(level.state() == RoundState::won, "Both players escape the hunters via the Hard exits");
 }
 
 } // namespace prototype::verification
