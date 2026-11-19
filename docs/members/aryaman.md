@@ -4,7 +4,11 @@ Secondary responsibility: Archivist.
 
 ## What is here
 
-Renderer is an interface; RecordingRenderer copies draw commands for tests. No SDL window exists.
+Renderer is an interface; RecordingRenderer copies draw commands for tests. The
+optional `SdlRenderer` backend now opens a window and renders cached BMP textures,
+sprite sheets, layers, camera transforms and bitmap text. See
+[rendering setup and contracts](../RENDERING.md) for the standalone demo, tests,
+integration review items and remaining limitations.
 
 - Public code: `engine/include/engine/rendering.hpp`
 - Implementation: `engine/src/rendering.cpp`
