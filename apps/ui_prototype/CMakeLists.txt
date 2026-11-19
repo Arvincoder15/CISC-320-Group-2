@@ -8,13 +8,17 @@ add_subdirectory(../.. engine-build)
 add_executable(ui_prototype main.cpp)
 target_link_libraries(ui_prototype PRIVATE SDL3::SDL3 elemental_coop_game engine_infrastructure engine_tools)
 group2_target(ui_prototype)
-add_custom_command(TARGET ui_prototype POST_BUILD
+add_custom_target(ui_prototype_assets
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_FILE_DIR:ui_prototype>/assets)
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_FILE_DIR:ui_prototype>/assets
+    VERBATIM)
+add_dependencies(ui_prototype ui_prototype_assets)
 include(CTest)
 if(BUILD_TESTING)
     add_executable(test_ui_level level_test.cpp)
-    target_link_libraries(test_ui_level PRIVATE elemental_coop_game)
+    target_link_libraries(test_ui_level PRIVATE elemental_coop_game engine_tools)
+    target_compile_definitions(test_ui_level PRIVATE
+        UI_PROTOTYPE_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets")
     group2_target(test_ui_level)
     add_test(NAME ui_level COMMAND test_ui_level)
 endif()

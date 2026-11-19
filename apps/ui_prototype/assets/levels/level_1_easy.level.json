@@ -1,0 +1,227 @@
+{
+  "format": "cisc320.level-document",
+  "schema_version": 1,
+  "name": "Level 1 - Easy",
+  "size": {
+    "x": 1280,
+    "y": 720
+  },
+  "spawns": [
+    {
+      "id": "spawn-fire",
+      "prefab": "fire_player",
+      "position": {
+        "x": 150,
+        "y": 580
+      }
+    },
+    {
+      "id": "spawn-water",
+      "prefab": "water_player",
+      "position": {
+        "x": 1130,
+        "y": 580
+      }
+    }
+  ],
+  "objects": [
+    {
+      "id": "platform-ground-west",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 0, "y": 580 },
+      "size": { "x": 260, "y": 70 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "platform-ground-middle-west",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 410, "y": 580 },
+      "size": { "x": 155, "y": 70 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "platform-ground-middle-east",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 705, "y": 580 },
+      "size": { "x": 190, "y": 70 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "platform-ground-east",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 1030, "y": 580 },
+      "size": { "x": 250, "y": 70 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "platform-lower-west",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 260, "y": 630 },
+      "size": { "x": 150, "y": 20 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "platform-lower-middle",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 565, "y": 630 },
+      "size": { "x": 140, "y": 20 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "platform-lower-east",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 895, "y": 630 },
+      "size": { "x": 135, "y": 20 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "platform-step-west",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 290, "y": 465 },
+      "size": { "x": 100, "y": 28 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "platform-step-east",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 890, "y": 465 },
+      "size": { "x": 100, "y": 28 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "platform-upper-middle-west",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 400, "y": 350 },
+      "size": { "x": 165, "y": 32 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "platform-upper-middle-center",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 565, "y": 380 },
+      "size": { "x": 145, "y": 32 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "platform-upper-middle-east",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 710, "y": 350 },
+      "size": { "x": 170, "y": 32 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "platform-exit-fire",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 50, "y": 255 },
+      "size": { "x": 300, "y": 38 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "platform-exit-water",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 930, "y": 255 },
+      "size": { "x": 300, "y": 38 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "hazard-lava-west",
+      "type": "hazard",
+      "prefab": "lava",
+      "position": { "x": 260, "y": 596 },
+      "size": { "x": 150, "y": 34 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "hazard-water-middle",
+      "type": "hazard",
+      "prefab": "water",
+      "position": { "x": 565, "y": 596 },
+      "size": { "x": 140, "y": 34 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "hazard-toxic-east",
+      "type": "hazard",
+      "prefab": "toxic",
+      "position": { "x": 895, "y": 596 },
+      "size": { "x": 135, "y": 34 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "lever-main",
+      "type": "lever",
+      "prefab": "cooperative_lever",
+      "position": { "x": 461, "y": 542 },
+      "size": { "x": 48, "y": 38 },
+      "parent_id": "platform-ground-middle-west",
+      "linked_id": "door-main"
+    },
+    {
+      "id": "plate-main",
+      "type": "pressure_plate",
+      "prefab": "cooperative_plate",
+      "position": { "x": 766, "y": 576 },
+      "size": { "x": 78, "y": 4 },
+      "parent_id": "platform-ground-middle-east",
+      "linked_id": "door-main"
+    },
+    {
+      "id": "door-main",
+      "type": "door",
+      "prefab": "cooperative_gate",
+      "position": { "x": 605, "y": 270 },
+      "size": { "x": 70, "y": 110 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "exit-fire",
+      "type": "exit",
+      "prefab": "fire_exit",
+      "position": { "x": 134, "y": 251 },
+      "size": { "x": 42, "y": 4 },
+      "parent_id": "platform-exit-fire",
+      "linked_id": ""
+    },
+    {
+      "id": "exit-water",
+      "type": "exit",
+      "prefab": "water_exit",
+      "position": { "x": 1104, "y": 251 },
+      "size": { "x": 42, "y": 4 },
+      "parent_id": "platform-exit-water",
+      "linked_id": ""
+    }
+  ]
+}

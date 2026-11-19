@@ -67,6 +67,55 @@ the shared renderer, or the gameplay world. A future ImGui integration would
 need owner approval and explicit input-capture integration with the existing SDL
 event loop.
 
+## Playable prototype campaign
+
+The SDL prototype now has an app-local adapter in
+`apps/ui_prototype/playable_level.hpp` that consumes the existing native
+`LevelDocument` format and produces a `PlayableLevelDefinition`. It does not
+change the shared schema or instantiate objects through a new engine API. The
+adapter validates both the general document and the prototype's supported
+gameplay subset before the active runtime is replaced. A failed parse or
+semantic validation leaves the current level intact.
+
+The native campaign data is in `apps/ui_prototype/assets/levels/`:
+
+- `level_1_easy.level.json` reproduces the original Easy room geometry,
+  spawns, hazards, lever, plate, door and exits. Easy retains its original
+  same-player control behavior.
+- `level_2_medium.level.json` adds separated routes, lava and water gaps,
+  raised matching exits, and a distinct-operator cooperative gate.
+- `level_3_hard.level.json` uses two sequential distinct-operator gates,
+  lava/water/toxic hazards, and a final shared ascent to matching exits.
+
+The adapter currently accepts 1280 × 720 documents with exactly one
+`fire_player` and one `water_player` spawn. Spawns use feet coordinates and
+must have a supported, in-bounds 28 × 46 collider with no hazard overlap.
+Gameplay objects are limited to `platform/solid`, `hazard` with `lava`, `water`,
+or `toxic`, `door` with `cooperative_gate` or
+`cooperative_gate_distinct`, `lever/cooperative_lever`,
+`pressure_plate/cooperative_plate`, and matching `fire_exit` and `water_exit`.
+Each gate must have exactly one linked lever and plate; their `linked_id`s name
+the door and their `parent_id`s name support platforms. Exits must also name
+their supporting platform. Hard requires two ordered gates with controls on
+their intended sides. Unsupported object types/prefabs, dangling links,
+invalid supports, spawn collisions, and invalid sequential gate geometry are
+rejected.
+
+The prototype-local runtime uses the existing ECS and physics systems; it does
+not modify `engine/` or `games/elemental_coop/`. Current movement parameters are
+gravity 1000 px/s², jump velocity −630 px/s, horizontal speed 240 px/s, with
+28 × 46 player colliders and solid platforms that block from below. The automated
+walkthroughs simulate normal input frames and physics ticks to validate routes,
+gate sequencing, hazard behavior, matching exits, and restart. Easy → Medium →
+Hard progression and the final campaign-complete screen are checked by the SDL
+smoke test. These are automated prototype checks, not a substitute for manual
+playtesting on the target machine.
+
+The walkthrough solution is documented in `apps/ui_prototype/README.md`.
+Level authoring remains data-driven; any new entity type, shared gameplay rule,
+physics tuning, renderer behavior, or UI/input behavior requires review by its
+owning teammate before expanding beyond this prototype.
+
 ## Coordinate with
 
 Sydney for entities; Arvin for JSON/file utilities; Aryaman/Rohan for SDL and ImGui input handling.

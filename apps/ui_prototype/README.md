@@ -1,10 +1,10 @@
-# Elemental Co-op: reference-room UI prototype (v2)
+# Elemental Co-op: SDL3 UI prototype
 
 This optional C++20 / SDL3 executable is based on Rohan's branch at `6532d4e`.
 It was also checked against main at `a17953f` (Gunveer's tools merge).
 It adds a graphical application without changing the shared engine interfaces or
-root CMake configuration. All new source is under `apps/ui_prototype/`.
-It is a prototype for review, not the completed game.
+root CMake configuration. The app-local campaign has three native JSON level
+definitions. It remains a prototype, not the completed game.
 
 ## Build on macOS
 
@@ -34,17 +34,18 @@ its official source into a user-owned folder and supply that prefix to CMake.
 - Losing window focus clears held input and pauses local play.
 - Escape pauses/resumes. Menu buttons support mouse clicks and Tab/Up/Down/Enter.
 - The app-local `DemoLevel` uses the team's `engine::World`, `PhysicsSystem`,
-  `Body`, `Collider` and `ContactState` for an actual platform room.
-- The room follows the reference composition: Fire at lower left, Water at lower
+  `Body`, `Collider` and `ContactState` for playable platform levels.
+- Easy preserves the original reference-room geometry and gameplay: Fire at lower left, Water at lower
   right, three pools along the bottom, raised central door, upper matching exits.
-  Two extra stepping platforms and tuned jumps make the illustrated layout playable.
 - Fire survives lava, Water survives water, and toxic liquid defeats either player.
   Touching the other element's liquid defeats the team. Both can jump over pools.
-- E flips the lever when either player is nearby. With the lever on, standing on
-  the pressure plate unlocks the centre door permanently for that round. Its solid
-  collider is removed. Both exits activate only after the door unlocks.
-- Both players must occupy their matching upper exits together to complete the room.
-  Restart resets players, lever, plate, door and completion state.
+- Easy retains its original lever-toggle and pressure-plate puzzle. Medium and
+  Hard require distinct players to operate each gate's lever and plate; the lever
+  latches on, and successfully opened gates remain open until restart. Hard has
+  two sequential gates, with Gate A blocking access to Gate B's controls.
+- Both players must occupy their matching exits together, with all gates open, to
+  complete a level. Next Level advances Easy → Medium → Hard. Hard completion
+  shows the final campaign state. Restart and Retry reset only the active level.
 - Pause: Resume, Restart, Settings, Main Menu.
 - Settings: volume, effects toggle, fullscreen, two window sizes, controls display.
   Apply updates the window and saves via Arvin's API. Back discards pending edits.
@@ -105,6 +106,47 @@ explicitly if you want to reset it, then restart or Apply again.
   review before merging. Do not describe this as complete SCRUM-10 integration
   into the final graphical application.
 
+## Playable level data and authoring
+
+The campaign definitions are `assets/levels/level_1_easy.level.json`,
+`level_2_medium.level.json`, and `level_3_hard.level.json`. They use the existing
+`cisc320.level-document` JSON format and are converted by the app-local
+`playable_level.hpp` adapter. This is a deliberately small gameplay subset of
+`LevelDocument`, not a new shared schema or an editor feature.
+
+Playable documents must be 1280 × 720 and contain exactly one `fire_player` and
+one `water_player` spawn. Spawn positions are feet coordinates and must place the
+complete 28 × 46 player collider on a supporting platform, inside the world, and
+outside hazards. Supported objects are solid platforms; lava, water, and toxic
+hazards; one or two linked cooperative gates; one linked lever and pressure
+plate per gate; and one matching exit per player. Each control's `linked_id`
+names its door, and its `parent_id` names its support platform. Exit
+`parent_id`s likewise identify their support. Unsupported types/prefabs,
+malformed/dangling links, invalid supports, and invalid gate arrangements are
+rejected before the active level is replaced.
+
+The app's current physics uses gravity 1000 px/s², jump velocity −630 px/s,
+horizontal speed 240 px/s, and solid platforms that block from above and below.
+When authoring a raised route, leave a side approach for each jump; a player
+cannot jump upward through a platform. Fire is immune only to lava and Water
+only to water; toxic and the other element's liquid are lethal. Run the physical
+walkthrough test after changing layout: it uses normal input frames and physics,
+not teleporting.
+
+Puzzle solutions:
+
+- **Easy:** Fire activates the lever; Water stands on the plate; then both use
+  their matching upper routes and occupy the exits together. This keeps the
+  original single-gate interaction rule.
+- **Medium:** Fire reaches and latches the lever; Water crosses to the plate
+  island and holds the plate. After the gate opens, Fire and Water take their
+  separate raised routes to their matching exits. Attempting both controls with
+  the same player does not open the gate.
+- **Hard:** Fire reaches Gate A's lever and stays on its plate; Water activates
+  Gate A's plate. After Gate A opens, Fire uses the elevated route to latch Gate
+  B's lever and holds its plate; Water activates Gate B's plate. Both gates stay
+  open, allowing the two players to climb the final ascent and reach the exits.
+
 ## Verification
 
 Automated smoke test (uses an isolated temporary settings path):
@@ -115,14 +157,17 @@ Automated smoke test (uses an isolated temporary settings path):
 
 On headless Linux, prefix with `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy`.
 The smoke test checks menu navigation, independent player keyboard movement/jump,
-focus clearing, settings save/load, hazard-to-Game-Over routing, a reachable win,
-opening the document inspector, stable-ID selection, editable-path loading,
-native save/reload, and failed-reload preservation of the document and selection.
-It also verifies that document operations leave the live ECS entity count and
-player positions unchanged. `test_ui_level` additionally checks all six elemental hazard combinations, remote
-lever rejection, cooperative unlocking, one-exit insufficiency and restart. Its
-walkthrough uses normal input frames and physics, with no teleports or forced wins.
-It does not verify sound through a physical speaker or OS fullscreen behaviour.
+focus clearing, settings save/load, hazard-to-Game-Over routing, physical wins
+and Easy → Medium → Hard progression through the UI's Next Level action, final
+campaign completion, and the level inspector. It also checks stable-ID selection,
+editable-path loading, native save/reload, failed-reload preservation, and that
+document operations leave live ECS entities and player positions unchanged.
+`test_ui_level` checks native JSON and semantic validation, invalid-load
+preservation, safe spawns, elemental hazards, cooperative controls, gate
+collisions and latching, matching exits, restart, and physical input/physics
+walkthroughs for all three levels. The walkthroughs do not teleport or force wins.
+These automated checks do not substitute for manual gameplay, speaker/audio, or
+OS fullscreen testing.
 
 Capture all eight rendered screen layouts at 1920 x 1080:
 
@@ -141,38 +186,27 @@ Manual checks before SDD submission:
 4. Exercise Pause, Restart, Settings and Main Menu, including Escape and mouse.
 5. Apply fullscreen/window size and volume. Test audio with effects on/off.
 6. Close and reopen the application. Confirm settings persist.
-7. Test the elemental pools and Retry. Complete the lever/plate puzzle and reach both exits.
+7. Test each level's elemental pools and Retry. Complete the lever/plate puzzle
+   with two players, advance through all three levels, and confirm the final
+   completion screen. Verify that restarting Medium or Hard resets only that
+   level's gates, controls, spawns and win state.
 8. Open F3 and confirm live values match the selected player. Switch to Level
    Document, select an object, inspect its relationships, and load/save/reload a
    copy of the bundled sample. Try malformed JSON and confirm the last valid
    document remains visible. Return to gameplay and verify it is unchanged.
-9. Check the lobby and Next Level clearly indicate unfinished functionality.
-
-## A playable walkthrough
-
-Fire uses A/D/W. Water uses Left/Right/Up. Release the jump key between jumps.
-
-1. Move Fire toward the left lava pool and jump right to the switch island.
-2. Stand beside the orange lever and press E once. Its handle turns green.
-3. Move Water left and jump over the toxic pool onto the pressure-plate island.
-4. Stand on the cyan plate. With the lever on, the centre door opens and stays open.
-5. Fire jumps left onto the small stepping platform, right onto the middle-left
-   platform, then left onto the upper Fire-exit platform.
-6. Water jumps right onto the small stepping platform, left onto the middle-right
-   platform, then right onto the upper Water-exit platform.
-7. Park each character inside the matching exit. Both must be there together.
-
-The central platforms can also be traversed once the door opens. Exit activation
-is gated by the puzzle, so jumping around the door does not bypass unlocking it.
+9. Check the lobby clearly indicates that multiplayer is unfinished.
 
 ## Files and verification helpers
 
-`main.cpp` owns rendering/events/settings. `demo_level.hpp` owns the reference room.
-`demo_walkthrough.hpp` is the deterministic physics walkthrough shared by the test
-and `--smoke-test`. `level_test.cpp` runs the room checks. `font_metrics.hpp` and
+`main.cpp` owns rendering/events/settings and campaign progression.
+`playable_level.hpp` validates and maps native JSON into app-local playable
+definitions. `demo_level.hpp` owns the level-local runtime and puzzle rules.
+`demo_walkthrough.hpp` is the deterministic physics walkthrough shared by the
+test and `--smoke-test`. `level_test.cpp` runs adapter, rule, and route checks.
+`font_metrics.hpp` and
 `assets/font.bmp` hold the text atlas. `SDD_GUI_SECTION.md` describes this version.
 
-Version 2 verification: 13 CTest suites passed on Linux with SDL 3.2.28, including
-all 12 existing engine suites. The SDL smoke test passed with dummy video/audio.
-The rendered layouts were inspected. Real Mac display, fullscreen, sound and
-physical-keyboard rollover still need the manual checks above.
+Automated verification and manual playtesting are reported separately; the
+headless SDL smoke test does not verify real display, fullscreen, audio output,
+or physical keyboard rollover. See the latest implementation report for the
+exact test commands and results.

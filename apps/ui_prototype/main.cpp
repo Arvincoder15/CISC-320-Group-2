@@ -31,6 +31,11 @@ constexpr SDL_Color muted{151, 186, 214, 255}, orange{255, 132, 35, 255};
 constexpr SDL_Color cyan{37, 195, 237, 255}, green{90, 220, 139, 255};
 enum class Screen { menu, lobby, play, pause, settings, lost, won, tools };
 struct Button { SDL_FRect rect; std::string label; int id; bool enabled{true}; };
+struct GameplayCamera {
+    float scale{1.0F};
+    float offset_x{};
+    float offset_y{};
+};
 using Window = std::unique_ptr<SDL_Window, decltype(&SDL_DestroyWindow)>;
 using Renderer = std::unique_ptr<SDL_Renderer, decltype(&SDL_DestroyRenderer)>;
 using Audio = std::unique_ptr<SDL_AudioStream, decltype(&SDL_DestroyAudioStream)>;
@@ -45,10 +50,25 @@ std::filesystem::path asset_directory() {
     return std::filesystem::path(base) / "assets";
 }
 
+std::array<prototype::PlayableLevelDefinition, 3> load_campaign_definitions() {
+    const auto levels = asset_directory() / "levels";
+    return {
+        prototype::load_playable_level_file(levels / "level_1_easy.level.json"),
+        prototype::load_playable_level_file(levels / "level_2_medium.level.json"),
+        prototype::load_playable_level_file(levels / "level_3_hard.level.json")
+    };
+}
+
+GameplayCamera gameplay_camera(const std::string& level_name) {
+    if (level_name == "Level 3 - Hard") return {0.75F, 160.0F, 150.0F};
+    return {};
+}
+
 class App {
 public:
     explicit App(std::filesystem::path settings_path)
-        : assets_(asset_directory()), path_(std::move(settings_path)) {
+        : assets_(asset_directory()), path_(std::move(settings_path)),
+          campaign_(load_campaign_definitions()), game_(campaign_[0]) {
         const auto startup = engine::load_user_settings(path_);
         settings_ = draft_ = startup.settings;
         if (startup.status == engine::SettingsLoadStatus::failed) {
@@ -117,11 +137,74 @@ public:
         reset_game(); screen_ = Screen::play;
         prototype::verification::solve(game_); update(0.01F);
         check(screen_ == Screen::won, "Physical route reaches both exits");
+        draw(); click(270, 535);
+        check(screen_ == Screen::play && campaign_index_ == 1 &&
+              game_.definition().name == "Level 2 - Medium",
+              "Next Level advances Easy to Medium");
+        const auto has_centered_platform = [this](float center_x) {
+            return std::any_of(game_.definition().platforms.begin(),
+                               game_.definition().platforms.end(),
+                [center_x](const auto& platform) {
+                    constexpr float width = 160.0F / 3.0F;
+                    return std::abs(platform.y - 340.0F) < 0.001F &&
+                        std::abs(platform.w - width) < 0.001F &&
+                        std::abs(platform.x + platform.w / 2.0F - center_x) < 0.001F;
+                });
+        };
+        check(has_centered_platform(330.0F) && has_centered_platform(950.0F),
+              "Runtime Medium loads one centered upper platform for each player");
+        prototype::verification::solve_medium(game_); update(0.01F);
+        check(screen_ == Screen::won, "Physical route completes Medium");
+        draw(); click(270, 535);
+        check(screen_ == Screen::play && campaign_index_ == 2 &&
+              game_.definition().name == "Level 3 - Hard",
+              "Next Level advances Medium to Hard");
+        prototype::verification::solve_hard(game_); update(0.01F);
+        check(screen_ == Screen::won && campaign_index_ == 2,
+              "Hard completion reaches the final campaign state");
         exercise_inspector(check);
+        check(gameplay_camera(campaign_[0].name).scale == 1.0F &&
+              gameplay_camera(campaign_[1].name).scale == 1.0F &&
+              gameplay_camera(campaign_[2].name).scale < 1.0F,
+              "Only Hard uses the zoomed gameplay camera");
+        game_.load(campaign_[2]);
+        campaign_index_ = 2;
+        screen_ = Screen::play;
+        draw();
+        const auto camera = gameplay_camera(game_.definition().name);
+        const auto project_x = [&camera](float x) {
+            return camera.offset_x + camera.scale * x;
+        };
+        const auto project_y = [&camera](float y) {
+            return camera.offset_y + camera.scale * y;
+        };
+        const auto exit_visible = [&](const auto& exit, const char* label) {
+            const float center_x = exit.area.x + exit.area.w / 2.0F;
+            const float surface_y = exit.area.y + exit.area.h;
+            const float portal_left = project_x(center_x - 40.0F);
+            const float portal_right = project_x(center_x + 40.0F);
+            const float portal_top = project_y(surface_y - 104.0F);
+            const float portal_bottom = project_y(surface_y);
+            const float label_left = project_x(center_x - 50.0F);
+            const float label_right =
+                project_x(center_x - 50.0F + text_width(label, 1.5F));
+            const float label_top = project_y(surface_y - 137.0F);
+            const float label_bottom = project_y(surface_y - 113.0F);
+            return portal_left >= 0.0F && portal_right <= width &&
+                portal_top >= 0.0F && portal_bottom <= height &&
+                label_left >= 0.0F && label_right <= width &&
+                label_top >= 80.0F && label_bottom <= height;
+        };
+        check(exit_visible(game_.definition().exits[0], "FIRE EXIT") &&
+              exit_visible(game_.definition().exits[1], "WATER EXIT"),
+              "Hard keeps both complete exit portals and labels in frame");
         if (!captures.empty()) {
             std::filesystem::create_directories(captures);
             SDL_SetWindowSize(window_.get(), 1920, 1080);
             SDL_SyncWindow(window_.get());
+            draw();
+            save_frame(captures / "10-level-3-hard-framing.bmp");
+            SDL_RenderPresent(renderer_.get());
             const std::array<const char*,8> names{"01-main-menu", "02-lobby", "03-gameplay", "04-pause",
                 "05-settings", "06-game-over", "07-level-complete", "08-developer-tools"};
             reset_game(); notice_.clear();
@@ -144,6 +227,8 @@ private:
     engine::FileResourceManager assets_;
     std::filesystem::path path_;
     engine::EngineSettings settings_{}, draft_{};
+    std::array<prototype::PlayableLevelDefinition, 3> campaign_;
+    std::size_t campaign_index_{0};
     prototype::DemoLevel game_;
     std::optional<engine::LevelDocument> inspection_document_;
     std::optional<engine::LevelInspectionSnapshot> inspection_snapshot_;
@@ -162,13 +247,30 @@ private:
     std::string notice_, address_{"127.0.0.1"}, level_path_, level_status_, selected_object_id_;
     std::size_t object_page_{0};
     std::vector<Button> buttons_;
+    GameplayCamera scene_camera_{};
     engine::Vec2 position(std::size_t i) const { return game_.world().find(game_.player(i).entity)->position; }
+    float scene_x(float x) const { return scene_camera_.offset_x + scene_camera_.scale * x; }
+    float scene_y(float y) const { return scene_camera_.offset_y + scene_camera_.scale * y; }
+    void line(float x1, float y1, float x2, float y2) {
+        SDL_RenderLine(renderer_.get(), scene_x(x1), scene_y(y1), scene_x(x2), scene_y(y2));
+    }
     void clear_input() { for (auto& p : inputs_) p.clear(); }
     void go(Screen next) {
         clear_input(); screen_ = next; focus_ = 0; controls_ = false;
         address_active_ = false; level_path_active_ = false; SDL_StopTextInput(window_.get());
     }
     void reset_game() { clear_input(); game_.restart(); }
+    void start_campaign() {
+        clear_input();
+        campaign_index_ = 0;
+        game_.load(campaign_[campaign_index_]);
+    }
+    void advance_campaign() {
+        if (campaign_index_ + 1 >= campaign_.size()) return;
+        clear_input();
+        game_.load(campaign_[++campaign_index_]);
+        go(Screen::play);
+    }
     void update_inspection_metrics(Uint64 frame_time_ms) {
         inspection_metrics_.runtime_entity_count = game_.world().size();
         inspection_metrics_.cached_resource_count = assets_.size();
@@ -399,7 +501,9 @@ private:
     }
     void color(SDL_Color c) { SDL_SetRenderDrawColor(renderer_.get(), c.r,c.g,c.b,c.a); }
     void rect(float x,float y,float w,float h,SDL_Color c) {
-        color(c); SDL_FRect box{x,y,w,h}; SDL_RenderFillRect(renderer_.get(), &box);
+        color(c);
+        SDL_FRect box{scene_x(x),scene_y(y),scene_camera_.scale*w,scene_camera_.scale*h};
+        SDL_RenderFillRect(renderer_.get(), &box);
     }
     void load_font() {
         const auto atlas = assets_.load("font.bmp");
@@ -427,6 +531,9 @@ private:
         return total*scale/4;
     }
     void text(float x,float y,const std::string& value,float scale=2,SDL_Color c=white) {
+        x = scene_x(x);
+        y = scene_y(y);
+        scale *= scene_camera_.scale;
         SDL_SetTextureColorMod(font_.get(),c.r,c.g,c.b); SDL_SetTextureAlphaMod(font_.get(),c.a);
         for(unsigned char ch:value) {
             const int n=ch>=32 && ch<127?ch-32:31;
@@ -443,7 +550,7 @@ private:
         color(c);
         for(int dy=-int(ry);dy<=int(ry);++dy) {
             const float dx=rx*std::sqrt(std::max(0.0F,1-float(dy*dy)/(ry*ry)));
-            SDL_RenderLine(renderer_.get(),x-dx,y+float(dy),x+dx,y+float(dy));
+            line(x-dx,y+float(dy),x+dx,y+float(dy));
         }
     }
     void circle(float x,float y,float radius,SDL_Color c) { ellipse(x,y,radius,radius,c); }
@@ -452,7 +559,7 @@ private:
         for(int row=0;row<int(h);++row) {
             const float dy=row<radius?radius-float(row):float(row)>h-radius?float(row)-(h-radius):0;
             const float inset=dy>0?radius-std::sqrt(std::max(0.0F,radius*radius-dy*dy)):0;
-            SDL_RenderLine(renderer_.get(),x+inset,y+float(row),x+w-inset,y+float(row));
+            line(x+inset,y+float(row),x+w-inset,y+float(row));
         }
     }
     void gradient(float x,float y,float w,float h,SDL_Color top,SDL_Color bottom) {
@@ -472,7 +579,7 @@ private:
                 if((a.y<=y && b.y>y)||(b.y<=y && a.y>y)) xs.push_back(a.x+(float(y)-a.y)*(b.x-a.x)/(b.y-a.y));
             }
             std::sort(xs.begin(),xs.end());
-            for(std::size_t i=0;i+1<xs.size();i+=2) SDL_RenderLine(renderer_.get(),xs[i],float(y),xs[i+1],float(y));
+            for(std::size_t i=0;i+1<xs.size();i+=2) line(xs[i],float(y),xs[i+1],float(y));
         }
     }
     void character(float x,float feet,bool fire,float size=1) {
@@ -505,8 +612,8 @@ private:
             circle(x+(dx-0.6F)*size,feet-28*size,0.9F*size,white);
         }
         color(fire?SDL_Color{194,94,13,255}:SDL_Color{0,126,186,255});
-        SDL_RenderLine(renderer_.get(),x-4*size,feet-16*size,x,feet-14*size);
-        SDL_RenderLine(renderer_.get(),x,feet-14*size,x+4*size,feet-16*size);
+        line(x-4*size,feet-16*size,x,feet-14*size);
+        line(x,feet-14*size,x+4*size,feet-16*size);
     }
     void button(float x,float y,float w,const std::string& label,int id,bool enabled=true) {
         const SDL_FRect box{x,y,w,60};
@@ -550,7 +657,7 @@ private:
     void activate(int id) {
         tone();
         switch(id) {
-        case 1: reset_game(); go(Screen::play); break;
+        case 1: start_campaign(); go(Screen::play); break;
         case 2: go(Screen::lobby); break;
         case 3: previous_=screen_; draft_=settings_; go(Screen::settings); break;
         case 4: running_=false; break;
@@ -568,9 +675,11 @@ private:
         case 15: tools_return_=screen_; go(Screen::tools); break;
         case 16: go(tools_return_); break;
         case 17: selected_=1-selected_; break;
-        case 18: reset_game(); notice_="Built-in demo level reloaded."; break;
+        case 18: reset_game(); notice_="Active level reloaded."; break;
         case 19: tone(); break;
         case 20: go(Screen::pause); break;
+        case 33: reset_game(); go(Screen::play); break;
+        case 34: advance_campaign(); break;
         case 21:
             tools_tab_ = ToolsTab::level_document;
             level_path_active_ = false;
@@ -743,53 +852,104 @@ private:
             rect(x+tile-4,r.y+8,2,r.h-12,{14,42,71,255});
         }
     }
-    void portal(float x,bool fire) {
-        const auto c=fire?orange:cyan;
-        rounded(x-40,151,80,104,8,{c.r,c.g,c.b,30});
-        rounded(x-34,154,68,101,6,c);
-        rect(x-25,163,50,92,{9,42,65,255});
-        if(game_.open()) { rect(x-24,164,48,90,{c.r,c.g,c.b,70}); }
-        text(x-50,118,fire?"FIRE EXIT":"WATER EXIT",1.5F,c);
+    void portal(float x, float surface_y, bool fire) {
+        const auto c = fire ? orange : cyan;
+        const float top = surface_y - 104.0F;
+        rounded(x - 40, top, 80, 104, 8, {c.r, c.g, c.b, 30});
+        rounded(x - 34, top + 3, 68, 101, 6, c);
+        rect(x - 25, top + 12, 50, 92, {9, 42, 65, 255});
+        if (game_.all_gates_open())
+            rect(x - 24, top + 13, 48, 90, {c.r, c.g, c.b, 70});
+        text(x - 50, surface_y - 137.0F, fire ? "FIRE EXIT" : "WATER EXIT", 1.5F, c);
     }
+
     void gameplay() {
-        text(35,25,"LEVEL 1",3.2F);
-        text(395,32,game_.open()?"Door open! Both players reach their exits":"Work together to unlock the centre door",1.65F,white);
-        for(const auto& r:game_.platforms) stone(r);
-        for(const auto& p:game_.pools) {
-            const auto c=p.kind==elemental_coop::Hazard::lava?SDL_Color{255,125,0,255}:p.kind==elemental_coop::Hazard::water?cyan:SDL_Color{87,235,11,255};
-            gradient(p.box.x,p.box.y,p.box.w,p.box.h,c,{c.r,Uint8(c.g/2),Uint8(c.b/2),255});
+        const auto& definition = game_.definition();
+        scene_camera_ = {};
+        text(35, 25, definition.name, 3.0F);
+        text(420, 32, game_.all_gates_open()
+             ? "All gates open - reach your matching exits"
+             : "Coordinate the linked levers and pressure plates", 1.5F, white);
+        scene_camera_ = gameplay_camera(definition.name);
+        for (const auto& platform : definition.platforms) stone(platform);
+        for (const auto& pool : definition.hazards) {
+            const auto c = pool.kind == elemental_coop::Hazard::lava ? SDL_Color{255, 125, 0, 255}
+                : pool.kind == elemental_coop::Hazard::water ? cyan : SDL_Color{87, 235, 11, 255};
+            gradient(pool.box.x, pool.box.y, pool.box.w, pool.box.h,
+                     c, {c.r, Uint8(c.g / 2), Uint8(c.b / 2), 255});
             color(c);
-            for(int j=0;j<int(p.box.w);++j) {
-                const float y=p.box.y+std::sin(float(j)*0.09F+elapsed_*3)*3;
-                SDL_RenderLine(renderer_.get(),p.box.x+j,y,p.box.x+j,p.box.y+5);
+            for (int j = 0; j < static_cast<int>(pool.box.w); ++j) {
+                const float y = pool.box.y + std::sin(static_cast<float>(j) * 0.09F + elapsed_ * 3) * 3;
+                line(pool.box.x + j, y, pool.box.x + j, pool.box.y + 5);
             }
-            for(int j=0;j<5;++j) circle(p.box.x+12+float(j)*26,p.box.y-5-std::sin(elapsed_*2+j)*5,2,c);
-            const std::string label=p.kind==elemental_coop::Hazard::lava?"LAVA":p.kind==elemental_coop::Hazard::water?"WATER":"TOXIC";
-            text(p.box.x+(p.box.w-text_width(label,1.6F))/2,655,label,1.6F,c);
+            for (int j = 0; j < 5; ++j)
+                circle(pool.box.x + 12 + static_cast<float>(j) * 26,
+                       pool.box.y - 5 - std::sin(elapsed_ * 2 + j) * 5, 2, c);
+            const std::string label = pool.kind == elemental_coop::Hazard::lava ? "LAVA"
+                : pool.kind == elemental_coop::Hazard::water ? "WATER" : "TOXIC";
+            text(pool.box.x + (pool.box.w - text_width(label, 1.6F)) / 2,
+                 655, label, 1.6F, c);
         }
-        portal(155,true); portal(1125,false);
-        const auto d=prototype::DemoLevel::door;
-        rounded(d.x-5,d.y-5,d.w+10,d.h+5,4,{112,141,171,255});
-        rect(d.x,d.y,d.w,d.h,{25,49,77,255});
-        if(!game_.open()) {
-            gradient(d.x+6,d.y+6,d.w-12,d.h-6,{108,128,151,255},{58,78,104,255});
-            circle(640,320,10,navy); polygon({{635,325},{645,325},{648,343},{632,343}},navy);
-        } else { text(610,315,"OPEN",1.4F,cyan); }
-        text(608,241,"DOOR",1.6F,white);
-        // Lever and plate are drawn at their actual gameplay trigger locations.
-        stone({461,568,48,12}); rect(482,542,7,26,{159,182,204,255});
-        color(game_.lever()?green:orange);
-        SDL_RenderLine(renderer_.get(),485,548,game_.lever()?499:472,526);
-        rounded(game_.lever()?490:463,519,18,10,4,game_.lever()?green:orange);
-        text(437,655,"SWITCH [E]",1.3F,game_.lever()?green:orange);
-        stone({752,570,106,10}); rounded(758,game_.plate()?570:565,94,7,3,game_.plate()?green:cyan);
-        text(725,655,"PRESSURE PLATE",1.25F,cyan);
-        for(std::size_t i=0;i<2;++i) {
-            const auto p=position(i); character(p.x,p.y,i==0,0.85F);
-            if(game_.player(i).at_exit) circle(p.x,p.y-72,4,green);
+
+        for (std::size_t i = 0; i < definition.exits.size(); ++i) {
+            const auto& exit = definition.exits[i];
+            portal(exit.area.x + exit.area.w / 2.0F,
+                   exit.area.y + exit.area.h, i == 0);
         }
-        text(30,79,"FIRE  A / D / W     WATER  ARROWS     E  LEVER",1.1F,muted);
-        text(395,79,game_.open()?"Unlocked: climb the stepping stones to the exits.":"Flip the lever, then stand on the pressure plate.",1.1F,cyan);
+
+        for (std::size_t i = 0; i < definition.gates.size(); ++i) {
+            const auto& gate = definition.gates[i];
+            const auto& door = gate.door;
+            const bool is_open = game_.gate_open(i);
+            rounded(door.x - 5, door.y - 5, door.w + 10, door.h + 5,
+                    4, {112, 141, 171, 255});
+            rect(door.x, door.y, door.w, door.h, {25, 49, 77, 255});
+            if (!is_open) {
+                gradient(door.x + 6, door.y + 6, door.w - 12, door.h - 6,
+                         {108, 128, 151, 255}, {58, 78, 104, 255});
+                circle(door.x + door.w / 2, door.y + door.h / 2, 10, navy);
+            } else {
+                text(door.x + 5, door.y + door.h / 2, "OPEN", 1.2F, cyan);
+            }
+            const auto gate_label = definition.gates.size() == 1
+                ? std::string("DOOR") : "GATE " + std::string(1, static_cast<char>('A' + i));
+            text(door.x - 5, door.y - 29, gate_label, 1.3F, white);
+
+            const auto& lever = gate.lever;
+            const bool lever_on = game_.gate_lever_on(i);
+            const auto lever_color = lever_on ? green : orange;
+            const float lever_x = lever.x + lever.w / 2.0F;
+            const float lever_bottom = lever.y + lever.h;
+            stone({lever.x, lever_bottom - 12, lever.w, 12});
+            rect(lever_x - 3, lever.y, 6, lever.h - 12, {159, 182, 204, 255});
+            line(lever_x, lever_bottom - 32,
+                 lever_on ? lever_x + 14 : lever_x - 14, lever_bottom - 54);
+            rounded(lever_on ? lever_x + 5 : lever_x - 22,
+                    lever_bottom - 61, 18, 10, 4, lever_color);
+            text(lever.x - 12, lever_bottom + 12, "SWITCH [E]", 1.0F, lever_color);
+
+            const auto& plate = gate.plate;
+            const bool plate_occupied = game_.gate_plate_occupied(i);
+            stone({plate.x - 14, plate.y - 6, plate.w + 28, 10});
+            rounded(plate.x - 8, plate_occupied ? plate.y - 6 : plate.y - 11,
+                    plate.w + 16, 7, 3, plate_occupied ? green : cyan);
+            text(plate.x - 18, plate.y + 15, "PRESSURE PLATE", 0.9F,
+                 plate_occupied ? green : cyan);
+        }
+
+        for (std::size_t i = 0; i < elemental_coop::player_count; ++i) {
+            const auto p = position(i);
+            character(p.x, p.y, i == 0, 0.85F);
+            if (game_.player(i).at_exit) circle(p.x, p.y - 72, 4, green);
+        }
+        scene_camera_ = {};
+        text(30, 79, "FIRE  A / D / W     WATER  ARROWS     E  LEVER", 1.1F, muted);
+        text(420, 79, game_.all_gates_open()
+             ? "Unlocked - both matching exits are required"
+             : definition.gates.size() == 1
+                 ? "Use different players for the lever and pressure plate"
+                 : "Open Gate A, then coordinate Gate B's two controls",
+             1.0F, cyan);
     }
     void draw_level_document_view() {
         center(35, "LEVEL DOCUMENT INSPECTOR", 3.2F);
@@ -911,7 +1071,7 @@ private:
         case Screen::play: gameplay(); button(1090,20,155,"PAUSE",20); break;
         case Screen::pause:
             gameplay(); rect(0,0,1280,690,{0,12,29,155}); rounded(389,169,502,456,14,blue); rounded(391,171,498,452,13,panel); center(210,"PAUSED",4);
-            button(440,280,400,"RESUME",5); button(440,355,400,"RESTART",1);
+            button(440,280,400,"RESUME",5); button(440,355,400,"RESTART",33);
             button(440,430,400,"SETTINGS",3); button(440,505,400,"MAIN MENU",6);
             break;
         case Screen::settings: {
@@ -930,12 +1090,23 @@ private:
         case Screen::lost:
         case Screen::won: {
             const bool won=screen_==Screen::won;
-            center(70,won?"LEVEL COMPLETE!":"GAME OVER",4);
-            center(145,won?"Both players reached their exits":"A character was defeated",2,muted);
+            const bool campaign_complete = won && campaign_index_ + 1 == campaign_.size();
+            center(70,campaign_complete?"CAMPAIGN COMPLETE!":won?"LEVEL COMPLETE!":"GAME OVER",4);
+            center(145,campaign_complete?"All three levels completed cooperatively":
+                   won?"Both players reached their exits":"A character was defeated",2,muted);
             character(470,420,true,3); character(810,420,false,3);
-            if(won) { button(100,505,340,"NEXT LEVEL",0,false); button(470,505,340,"REPLAY",1); button(840,505,340,"MAIN MENU",6);
-                center(610,"Only one test level is included.",2,muted); }
-            else { button(260,505,350,"RETRY",1); button(670,505,350,"MAIN MENU",6); }
+            if(won && !campaign_complete) {
+                button(100,505,340,"NEXT LEVEL",34);
+                button(470,505,340,"REPLAY LEVEL",33);
+                button(840,505,340,"MAIN MENU",6);
+                center(610,game_.definition().name,2,muted);
+            } else if(campaign_complete) {
+                button(260,505,350,"REPLAY CAMPAIGN",1);
+                button(670,505,350,"MAIN MENU",6);
+            } else {
+                button(260,505,350,"RETRY",33);
+                button(670,505,350,"MAIN MENU",6);
+            }
             break;
         }
         case Screen::tools: {
@@ -943,7 +1114,7 @@ private:
                 draw_level_document_view();
             } else {
                 center(50,"DEVELOPER TOOLS",4);
-                text(60,120,"LEVEL: reference room 01",2,cyan);
+                text(60,120,"LEVEL: " + game_.definition().name,2,cyan);
                 button(800,105,420,"RELOAD DEMO LEVEL",18);
                 rounded(50,190,450,390,10,panel); rounded(530,190,700,390,10,panel);
                 text(80,220,"LIVE PLAYER ENTITIES",2);

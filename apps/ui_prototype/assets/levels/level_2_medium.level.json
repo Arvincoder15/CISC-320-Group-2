@@ -1,0 +1,173 @@
+{
+  "format": "cisc320.level-document",
+  "schema_version": 1,
+  "name": "Level 2 - Medium",
+  "size": { "x": 1280, "y": 720 },
+  "spawns": [
+    {
+      "id": "spawn-fire",
+      "prefab": "fire_player",
+      "position": { "x": 120, "y": 580 }
+    },
+    {
+      "id": "spawn-water",
+      "prefab": "water_player",
+      "position": { "x": 1160, "y": 580 }
+    }
+  ],
+  "objects": [
+    {
+      "id": "ground-west",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 0, "y": 580 },
+      "size": { "x": 250, "y": 70 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "ground-center",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 390, "y": 580 },
+      "size": { "x": 250, "y": 70 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "ground-plate-island",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 690, "y": 580 },
+      "size": { "x": 160, "y": 70 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "ground-east",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 1000, "y": 580 },
+      "size": { "x": 280, "y": 70 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "step-fire-1",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 480, "y": 455 },
+      "size": { "x": 160, "y": 20 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "step-fire-2",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 303.333333, "y": 340 },
+      "size": { "x": 53.333333, "y": 20 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "step-fire-3",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 30, "y": 205 },
+      "size": { "x": 190, "y": 20 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "step-water-1",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 680, "y": 455 },
+      "size": { "x": 80, "y": 20 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "step-water-2",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 923.333333, "y": 340 },
+      "size": { "x": 53.333333, "y": 20 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "step-water-3",
+      "type": "platform",
+      "prefab": "solid",
+      "position": { "x": 1060, "y": 205 },
+      "size": { "x": 190, "y": 20 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "hazard-lava",
+      "type": "hazard",
+      "prefab": "lava",
+      "position": { "x": 250, "y": 596 },
+      "size": { "x": 140, "y": 34 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "hazard-water",
+      "type": "hazard",
+      "prefab": "water",
+      "position": { "x": 850, "y": 596 },
+      "size": { "x": 150, "y": 34 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "lever-medium",
+      "type": "lever",
+      "prefab": "cooperative_lever",
+      "position": { "x": 496, "y": 542 },
+      "size": { "x": 48, "y": 38 },
+      "parent_id": "ground-center",
+      "linked_id": "door-medium"
+    },
+    {
+      "id": "plate-medium",
+      "type": "pressure_plate",
+      "prefab": "cooperative_plate",
+      "position": { "x": 742, "y": 576 },
+      "size": { "x": 56, "y": 4 },
+      "parent_id": "ground-plate-island",
+      "linked_id": "door-medium"
+    },
+    {
+      "id": "door-medium",
+      "type": "door",
+      "prefab": "cooperative_gate_distinct",
+      "position": { "x": 640, "y": 350 },
+      "size": { "x": 50, "y": 230 },
+      "parent_id": "",
+      "linked_id": ""
+    },
+    {
+      "id": "exit-fire",
+      "type": "exit",
+      "prefab": "fire_exit",
+      "position": { "x": 104, "y": 201 },
+      "size": { "x": 42, "y": 4 },
+      "parent_id": "step-fire-3",
+      "linked_id": ""
+    },
+    {
+      "id": "exit-water",
+      "type": "exit",
+      "prefab": "water_exit",
+      "position": { "x": 1139, "y": 201 },
+      "size": { "x": 42, "y": 4 },
+      "parent_id": "step-water-3",
+      "linked_id": ""
+    }
+  ]
+}
