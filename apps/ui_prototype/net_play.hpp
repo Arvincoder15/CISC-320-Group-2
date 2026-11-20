@@ -113,6 +113,7 @@ public:
 
     // Why the last host()/join() failed, e.g. "Could not open port 7777".
     const std::string& error() const { return session_->last_error(); }
+    std::string room_code() const { return session_->room_code(); }
     Role role() const { return role_; }
     bool active() const { return role_ != Role::offline; }
     bool connected() const { return host_ ? host_->client_ready() : client_ && client_->ready(); }
@@ -131,7 +132,11 @@ public:
         if (client_ && client_->rejected()) return "The host runs a different version of the game";
         if (connection_lost()) return session_->last_error().empty() ? "Connection lost" : session_->last_error();
         if (host_) {
-            if (!host_->client_ready()) return "Waiting for a player on port " + std::to_string(session_->port());
+            if (!host_->client_ready()) {
+                if (session_->state() == engine::net::SessionState::connecting) return "Creating room...";
+                if (const auto code = room_code(); !code.empty()) return "Room code: " + code + "  |  Waiting for Player 2";
+                return "Waiting for a player on port " + std::to_string(session_->port());
+            }
             return started_ ? "Online: you are FIRE" : "Player 2 connected. Press Start Game";
         }
         if (!client_->ready()) return "Connecting...";

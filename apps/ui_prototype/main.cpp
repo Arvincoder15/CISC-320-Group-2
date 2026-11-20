@@ -5,6 +5,7 @@
 #include "engine/interaction.hpp"
 #include "engine/tools.hpp"
 #include "engine/resource_files.hpp"
+#include "engine/room_relay.hpp"
 #include "engine/sdl_renderer.hpp"
 #include "demo_level.hpp"
 #include "font_metrics.hpp"
@@ -13,6 +14,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -69,10 +71,12 @@ GameplayCamera gameplay_camera(const std::string& level_name) {
 
 class App {
 public:
-    App(std::filesystem::path settings_path, std::unique_ptr<engine::net::Session> session)
+    App(std::filesystem::path settings_path, std::unique_ptr<engine::net::Session> session, bool room_mode)
         : assets_(asset_directory()), path_(std::move(settings_path)),
           campaign_(load_campaign_definitions()), game_(campaign_[0]),
-          online_(game_, campaign_, campaign_index_, std::move(session)) {
+          online_(game_, campaign_, campaign_index_, std::move(session)),
+          room_mode_(room_mode) {
+        if (room_mode_) address_.clear();
         const auto startup = engine::load_user_settings(path_);
         settings_ = draft_ = startup.settings;
         if (startup.status == engine::SettingsLoadStatus::failed) {
@@ -288,6 +292,7 @@ private:
     std::size_t campaign_index_{0};
     prototype::DemoLevel game_;
     prototype::OnlinePlay online_;
+    bool room_mode_;
     std::optional<engine::LevelDocument> inspection_document_;
     std::optional<engine::LevelInspectionSnapshot> inspection_snapshot_;
     engine::InspectionMetrics inspection_metrics_{};
@@ -746,9 +751,13 @@ private:
             online_.request(elemental_coop::ControlKind::resume);
             if(online_.role()==prototype::OnlinePlay::Role::host) { clear_input(); reset_animation(); go(Screen::play); }
             break;
-        case 40: if(!online_.host()) notice_=online_.error(); break;
-        case 41: if(!online_.join(address_)) notice_=online_.error(); break;
+        case 40: notice_.clear(); if(!online_.host()) notice_=online_.error(); break;
+        case 41: notice_.clear(); if(!online_.join(address_)) notice_=online_.error(); break;
         case 42: start_campaign(); online_.start(); go(Screen::play); break;
+        case 43:
+            if (const auto code = online_.room_code(); !code.empty())
+                notice_ = SDL_SetClipboardText(code.c_str()) ? "Room code copied." : "Could not copy room code.";
+            break;
         case 34: advance_campaign(); break;
         case 21:
             tools_tab_ = ToolsTab::level_document;
@@ -840,7 +849,8 @@ private:
         }
         if(e.type==SDL_EVENT_TEXT_INPUT && screen_==Screen::lobby && address_active_) {
             for(const char* p=e.text.text; *p && address_.size()<40; ++p)
-                if((*p>='0' && *p<='9') || (*p>='a' && *p<='z') || *p=='.' || *p==':' || *p=='-') address_+=*p;
+                if((*p>='0' && *p<='9') || (*p>='a' && *p<='z') || (*p>='A' && *p<='Z') ||
+                   (!room_mode_ && (*p=='.' || *p==':' || *p=='-'))) address_+=*p;
             return;
         }
         if(e.type!=SDL_EVENT_KEY_DOWN && e.type!=SDL_EVENT_KEY_UP) return;
@@ -857,10 +867,22 @@ private:
                 else if(screen_==Screen::pause) go(Screen::play);
                 else if(screen_==Screen::settings) go(previous_);
                 else if(screen_==Screen::tools) go(tools_return_);
+                else if(screen_==Screen::lobby) { online_.leave(); go(Screen::menu); }
                 else go(Screen::menu);
                 return;
             }
             if(screen_!=Screen::play) {
+                if (room_mode_ && address_active_ && (e.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0 &&
+                    scan == SDL_SCANCODE_V) {
+                    std::unique_ptr<char, decltype(&SDL_free)> clipboard(SDL_GetClipboardText(), SDL_free);
+                    if (clipboard) {
+                        const std::string_view pasted = clipboard.get();
+                        if (pasted.size() <= 40 && pasted.find_first_not_of(
+                            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789") == std::string_view::npos)
+                            address_ = pasted;
+                    }
+                    return;
+                }
                 if (screen_ == Screen::tools && tools_tab_ == ToolsTab::level_document &&
                     level_path_active_ && (e.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0 &&
                     scan == SDL_SCANCODE_A) {
@@ -901,7 +923,12 @@ private:
     // screen. Screens follow the shared state. Returns false when nothing below should run this frame.
     bool update_online(float dt) {
         online_.update({inputs_[0].consume(),inputs_[1].consume()},dt);
-        if(online_.connection_lost()) { notice_=online_.status(); online_.leave(); go(Screen::menu); return false; }
+        if(online_.connection_lost()) {
+            notice_=online_.status();
+            online_.leave();
+            go(screen_ == Screen::lobby ? Screen::lobby : Screen::menu);
+            return false;
+        }
         if(!online_.playing()) return false; // still in the lobby
         if(screen_==Screen::lobby) go(Screen::play);
         if(screen_==Screen::play && online_.paused()) go(Screen::pause);
@@ -1196,7 +1223,9 @@ private:
             button(440,530,400,"DEVELOPER TOOLS",15); break;
         case Screen::lobby:
             center(65,"MULTIPLAYER LOBBY",4); rounded(139,154,1002,432,12,blue); rounded(141,156,998,428,11,panel);
-            text(190,215,"Server",2); rect(310,200,760,55,navy); text(330,219,address_,2);
+            text(190,215,room_mode_ ? "Code" : "Server",2);
+            rect(310,200,760,55,navy);
+            text(330,219,room_mode_ && address_.empty() && !address_active_ ? "Enter room code" : address_,2);
         {
             const bool hosting=online_.role()==prototype::OnlinePlay::Role::host;
             const bool joining=online_.role()==prototype::OnlinePlay::Role::joiner;
@@ -1204,9 +1233,14 @@ private:
                  hosting||online_.connected()?green:muted);
             text(190,350,joining?"Player 2 (water): You":online_.connected()?"Player 2 (water): Connected":"Player 2 (water): Not connected",2,
                  joining||online_.connected()?green:muted);
-            button(190,420,270,"HOST SESSION",40,!online_.active()); button(505,420,270,"JOIN SESSION",41,!online_.active());
+            button(190,420,270,room_mode_ ? "CREATE ROOM" : "HOST SESSION",40,!online_.active());
+            button(505,420,270,room_mode_ ? "JOIN ROOM" : "JOIN SESSION",41,!online_.active());
             button(820,420,270,"START GAME",42,hosting&&online_.connected());
-            center(505,online_.active()?online_.status():"Host a session, or type the host's address and join.",2,muted);
+            center(505,online_.active() ? online_.status() :
+                       room_mode_ ? "Create a room and share the code, or enter a friend's code." :
+                                    "Host a session, or type the host's address and join.",2,muted);
+            if (room_mode_ && hosting && !online_.connected() && !online_.room_code().empty())
+                button(190,535,270,"COPY CODE",43);
             button(440,600,400,"BACK",6); break;
         }
         case Screen::play: gameplay(); button(1090,20,155,"PAUSE",20); break;
@@ -1311,8 +1345,12 @@ int main(int argc,char** argv) {
         }
         std::cout<<"Settings: "<<path<<'\n';
         // The UI smoke test can run without socket access or a free network port.
-        auto session = smoke ? engine::net::make_loopback_pair().first : engine::net::make_enet_session();
-        App app(path, std::move(session));
+        const char* relay = std::getenv("ELEMENTAL_COOP_RELAY");
+        if (!relay) relay = GROUP2_RELAY_ADDRESS;
+        const bool room_mode = !smoke && *relay;
+        auto session = smoke ? engine::net::make_loopback_pair().first :
+            room_mode ? engine::net::make_room_session(relay) : engine::net::make_enet_session();
+        App app(path, std::move(session), room_mode);
         if(smoke) { app.smoke_test(argc>2?std::filesystem::path(argv[2]):std::filesystem::path{}); std::filesystem::remove_all(path.parent_path()); return 0; }
         return app.run();
     } catch(const std::exception& e) { std::cerr<<"UI prototype: "<<e.what()<<'\n'; return 1; }

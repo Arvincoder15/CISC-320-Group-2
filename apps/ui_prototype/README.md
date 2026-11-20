@@ -27,6 +27,8 @@ its official source into a user-owned folder and supply that prefix to CMake.
 
 ## What works
 
+See [Remote multiplayer](../../docs/ROOM_RELAY.md) for room codes, a two-window test, and relay deployment.
+
 - Main menu: Local Play, Multiplayer, Settings, Exit, Developer Tools.
 - Real SDL keyboard events map to the existing per-player `PlayerInput` classes.
 - Fire: A/D to move, W to jump. Water: Left/Right to move, Up to jump.

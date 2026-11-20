@@ -6,13 +6,6 @@
 #include <chrono>
 #include <cstdlib>
 namespace engine::net {
-namespace {
-constexpr std::size_t max_packet_bytes = 512;          // largest co-op message is under 50 bytes
-constexpr auto connect_timeout = std::chrono::seconds(5);
-// ENet pings every 500 ms, so 2.5 s of silence means the peer is gone. ENet's own timeout only fires at
-// exponential retry points (measured 4.4–4.8 s), which misses the 3 s requirement (NFR-17).
-constexpr auto peer_silence_limit = std::chrono::milliseconds(2500);
-
 bool enet_ready() {
     static const bool ready = [] {
         if (enet_initialize() != 0) return false;
@@ -21,6 +14,12 @@ bool enet_ready() {
     }();
     return ready;
 }
+
+namespace {
+constexpr std::size_t max_packet_bytes = 512;
+constexpr auto connect_timeout = std::chrono::seconds(5);
+// ENet's own timeout can exceed the 3 s requirement for the direct connection.
+constexpr auto peer_silence_limit = std::chrono::milliseconds(2500);
 
 class EnetSession final : public Session {
 public:
@@ -74,7 +73,8 @@ public:
             case ENET_EVENT_TYPE_RECEIVE: {
                 const auto* data = reinterpret_cast<const std::byte*>(event.packet->data);
                 if (event.peer == peer_ && event.packet->dataLength <= max_packet_bytes)
-                    events.push_back({Event::Kind::message, {data, data + event.packet->dataLength}});
+                    events.push_back({Event::Kind::message, {data, data + event.packet->dataLength},
+                                      static_cast<Channel>(event.channelID)});
                 enet_packet_destroy(event.packet);
                 break;
             }

@@ -17,6 +17,7 @@ struct Event {
     enum class Kind { connected, disconnected, message };
     Kind kind{Kind::message};
     std::vector<std::byte> payload; // only for message events
+    Channel channel{Channel::reliable};
 };
 class Session {
 public:
@@ -29,6 +30,7 @@ public:
     virtual const std::string& last_error() const = 0;
     virtual std::uint16_t port() const = 0;                             // port being hosted, 0 otherwise
     virtual void close() = 0;
+    virtual std::string room_code() const { return {}; }
 };
 // Real UDP connection via ENet (ADR NET-2). Port 0 in host() lets the OS pick; read it back with port().
 std::unique_ptr<Session> make_enet_session();

@@ -43,8 +43,12 @@ target_include_directories(engine_tools SYSTEM PRIVATE third_party/nlohmann_json
 
 target_sources(engine_infrastructure PRIVATE engine/src/resource_files.cpp engine/src/configuration.cpp)
 target_include_directories(engine_infrastructure SYSTEM PRIVATE third_party/nlohmann_json/include)
-target_sources(engine_networking PRIVATE engine/src/enet_session.cpp)
+target_sources(engine_networking PRIVATE engine/src/enet_session.cpp engine/src/room_session.cpp engine/src/room_relay.cpp)
 target_link_libraries(engine_networking PRIVATE enet)
+
+add_executable(room_relay apps/room_relay.cpp)
+target_link_libraries(room_relay PRIVATE engine_networking)
+group2_target(room_relay)
 
 add_library(elemental_coop_game STATIC games/elemental_coop/src/game.cpp)
 target_include_directories(elemental_coop_game PUBLIC games/elemental_coop/include)

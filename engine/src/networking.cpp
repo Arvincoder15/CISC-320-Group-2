@@ -85,7 +85,7 @@ public:
         if (link_->state[me_] != SessionState::connected) return false;
         const auto drop = static_cast<unsigned>(link_->conditions.drop_percent);
         if (channel == Channel::unreliable && link_->rng() % 100 < drop) return true; // lost in transit
-        link_->deliver(peer_, {Event::Kind::message, {bytes.begin(), bytes.end()}});
+        link_->deliver(peer_, {Event::Kind::message, {bytes.begin(), bytes.end()}, channel});
         return true;
     }
     std::vector<Event> poll() override {

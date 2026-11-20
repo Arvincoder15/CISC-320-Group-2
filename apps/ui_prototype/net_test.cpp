@@ -1,9 +1,12 @@
 // Henry: online play with the real campaign levels, both machines in one process over in-memory links.
 #include "net_play.hpp"
+#include "engine/room_relay.hpp"
 #include "test_support.hpp"
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <thread>
 using namespace prototype;
 using elemental_coop::ControlKind;
 using elemental_coop::RoundState;
@@ -65,13 +68,72 @@ struct Pair {
         CHECK(!"travel did not arrive");
     }
 };
+
+void check_relay(const std::array<PlayableLevelDefinition, 3>& campaign) {
+    engine::net::RoomRelay relay(0);
+    const auto session = [&] { return engine::net::make_room_session("127.0.0.1", relay.port()); };
+    DemoLevel host_level(campaign[0]), join_level(campaign[0]);
+    std::size_t host_index = 0, join_index = 0;
+    OnlinePlay host(host_level, campaign, host_index, session());
+    OnlinePlay joiner(join_level, campaign, join_index, session());
+    auto extra = session();
+    const auto pump = [&](auto ready, InputFrame fire = {}, InputFrame water = {}) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(4);
+        while (!ready() && std::chrono::steady_clock::now() < deadline) {
+            relay.poll();
+            host.update({fire, {}}, dt);
+            joiner.update({water, {}}, dt);
+            (void)extra->poll();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(ready());
+    };
+
+    CHECK(!extra->join("bad", 0));
+    CHECK(host.host());
+    pump([&] { return !host.room_code().empty(); });
+    const auto code = host.room_code();
+    CHECK(host.status().find(code) != std::string::npos && !host.connected());
+    CHECK(joiner.join(code));
+    pump([&] { return host.connected() && joiner.connected(); });
+    CHECK(!host.playing() && !joiner.playing());
+
+    CHECK(extra->join(code, 0));
+    pump([&] { return extra->state() == engine::net::SessionState::failed; });
+    CHECK(extra->last_error().find("already in use") != std::string::npos);
+
+    host.start();
+    pump([&] { return host.playing() && joiner.playing(); });
+    const auto initial_fire = host_level.position(0).x;
+    const auto initial_water = host_level.position(1).x;
+    pump([&] {
+        return join_level.position(0).x > initial_fire + 10 &&
+               join_level.position(1).x < initial_water - 10 &&
+               host_level.position(0).x > initial_fire + 10 &&
+               host_level.position(1).x < initial_water - 10;
+    }, {1, false, false}, {-1, false, false});
+
+    host.leave();
+    pump([&] { return joiner.connection_lost(); });
+    CHECK(joiner.status().find("left the room") != std::string::npos);
+    joiner.leave();
+    CHECK(host.host());
+    pump([&] { return !host.room_code().empty(); });
+    CHECK(joiner.join(host.room_code()));
+    pump([&] { return host.connected() && joiner.connected(); });
+}
 }
 
-int main() { return run_test([] {
+int main(int argc, char** argv) { return run_test([&] {
     const std::array<PlayableLevelDefinition, 3> campaign{
         load_playable_level_file(level_asset("level_1_easy.level.json")),
         load_playable_level_file(level_asset("level_2_medium.level.json")),
         load_playable_level_file(level_asset("level_3_hard.level.json"))};
+
+    if (argc == 2 && std::string_view(argv[1]) == "--relay") {
+        check_relay(campaign);
+        return;
+    }
 
     {   // Part A, clean link like a LAN: lobby, then the Level 1 lever and plate across the network.
         Pair p(campaign, {});
