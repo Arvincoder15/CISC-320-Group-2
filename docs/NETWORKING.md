@@ -161,6 +161,12 @@ Measured by hand with the demo (Windows, two processes): a killed host or joiner
 2.1–2.5 s (NFR-17 asks for 3 s). ENet's own timeout took 4.4–4.8 s, which is why the session uses a 2.5 s
 silence watchdog instead. Joining an unused port reports "Could not reach host" after 5 s.
 
+Played by hand in the real game (Windows, two windows on one computer, 127.0.0.1): host and join from the
+lobby, Start Game, water moves in both windows, Esc in either window pauses both, closing the joiner sends the
+host to the menu with "Connection lost".
+
+**Still to do:** the same run on two computers over a phone hotspot or ethernet, before the presentation.
+
 ## Limits
 
 - Exactly two players, LAN only: no internet play, NAT traversal, matchmaking or accounts.
