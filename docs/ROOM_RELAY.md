@@ -33,17 +33,31 @@ being rejected, disconnect, and retry.
 
 ## Deploy for two different networks
 
-On a Linux machine with a public IPv4 address and inbound UDP support, build
-and run the headless relay as an unprivileged user:
+Use a Linux VM with systemd, a public IPv4 address, and inbound UDP support.
+An Oracle Cloud Always Free-eligible VM is one option if your home region has
+capacity. Select an eligible shape and keep the instance within the free limits.
+Allow stateful IPv4 ingress for **UDP destination port 7777**, with any source
+port, in the instance's network security group or subnet security list. For a
+private team test, limit the source addresses to the players' public IPv4
+addresses. The VM's own firewall also needs to permit this traffic.
+
+On an Ubuntu VM, install the build tools and run the installer from the branch:
 
 ```sh
-cmake -S . -B build-relay -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
-cmake --build build-relay --target room_relay --parallel
-./build-relay/room_relay 7777
+sudo apt-get update
+sudo apt-get install --no-install-recommends git cmake build-essential
+git clone --branch feature/arvin-room-code-relay https://github.com/Arvincoder15/CISC-320-Group-2.git
+cd CISC-320-Group-2
+bash deploy/install-room-relay.sh
 ```
 
-Allow inbound UDP 7777 through the machine and provider firewalls. Keep the
-relay running while playing. Both players launch the same game commit with
+The installer builds the headless relay, enables it at boot, and starts it under
+a dedicated unprivileged systemd user. It stays up after SSH disconnects. Check
+it with `systemctl status elemental-coop-relay.service` or view logs with
+`sudo journalctl -u elemental-coop-relay.service -n 50`. Pull and rerun the
+installer to update the relay between matches. Restarting it ends active rooms.
+
+Both players launch the same game commit with
 `ELEMENTAL_COOP_RELAY` set to the relay hostname or IPv4 address. A packaged
 build can set `-DGROUP2_RELAY_ADDRESS=relay.example.com` when configuring the UI,
 so players can open the game normally. An empty `ELEMENTAL_COOP_RELAY`

@@ -1,0 +1,17 @@
+[Unit]
+Description=Elemental Co-op room relay
+After=network.target
+
+[Service]
+ExecStart=/usr/local/libexec/elemental-coop/room_relay 7777
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+Restart=on-failure
+RestartSec=3s
+
+[Install]
+WantedBy=multi-user.target
