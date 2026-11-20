@@ -5,8 +5,8 @@ game and controls **fire** (slot 0); the player who joins controls **water** (sl
 reasons behind them are in [DECISIONS.md](DECISIONS.md), ADRs NET-1 to NET-5.
 
 **Status:** connection, protocol, host/client sync of the playable game (players, levers, plates, doors, acid
-enemies, campaign level), disconnect detection and a two-process demo work and are tested. Not yet done: the
-lobby buttons and game loop in `apps/ui_prototype/main.cpp` (Rohan, see [For Rohan](#for-rohan-wiring-the-lobby)).
+enemies, campaign level), disconnect detection, the lobby in the playable game and a two-process demo work and
+are tested. See [Playing online](#playing-online-in-the-game) for how the lobby works and how it is wired.
 
 ## The pieces
 
@@ -22,12 +22,25 @@ lobby buttons and game loop in `apps/ui_prototype/main.cpp` (Rohan, see [For Roh
 ENet v1.3.18 is downloaded by CMake on the first configure, so that first configure needs internet. Nothing
 outside `engine/src/enet_session.cpp` includes ENet.
 
-## For Rohan: wiring the lobby
+## Playing online in the game
 
-Everything the UI needs is one object, `prototype::OnlinePlay` in `apps/ui_prototype/net_play.hpp`. It owns
-the connection, runs the host's level or keeps the joiner's level in sync, and gives you status text. You never
-touch the protocol. Its whole flow (lobby, Level 1 lever and plate, pause, level switch, disconnect) is tested in
-`apps/ui_prototype/net_test.cpp`.
+1. Both players run the game (build below). Both choose **MULTIPLAYER**.
+2. One player clicks **HOST SESSION**; the status line says "Waiting for a player on port 7777".
+3. The other types the host's address in the Server box (`127.0.0.1` for two windows on one computer) and
+   clicks **JOIN SESSION**.
+4. When "Player 2 (water): Connected" appears, the host clicks **START GAME**. Both start Level 1.
+
+The host plays fire and the joiner plays water; on each computer both key sets (A/D/W and arrows) steer that
+player's character, and E pulls a lever. Esc pauses both players. RETRY works from either side; NEXT LEVEL and
+REPLAY CAMPAIGN are the host's, and the joiner follows. If the connection drops, both return to the main menu
+with the reason at the bottom of the screen. Switching windows does not pause online play.
+
+### How it is wired (`apps/ui_prototype/main.cpp`)
+
+Everything the UI uses is one object, `prototype::OnlinePlay` in `apps/ui_prototype/net_play.hpp`. It owns the
+connection, runs the host's level or keeps the joiner's level in sync, and gives status text; the UI never
+touches the protocol. Its whole flow (lobby, Level 1 lever and plate, pause, level switch, disconnect) is tested
+in `apps/ui_prototype/net_test.cpp`, and the UI smoke test clicks through the lobby.
 
 **1. Member** in `App`, declared after `game_` (it keeps references to `game_`, `campaign_`, `campaign_index_`):
 
@@ -46,31 +59,21 @@ prototype::OnlinePlay online_{game_, campaign_, campaign_index_};
 | BACK / MAIN MENU | `online_.leave();` |
 | Status line | `text(..., online_.status())` |
 
-**3. Game loop.** While `online_.active()`, call `online_.update(...)` **every frame on every screen** (it also
-does the handshake in the lobby), instead of `game_.tick(...)`:
-
-```cpp
-if (online_.active()) {
-    online_.update({inputs_[0].consume(), inputs_[1].consume()}, dt); // both key sets move this player's character
-    if (online_.connection_lost()) { notice_ = online_.status(); online_.leave(); go(Screen::menu); }
-    else if (screen_ == Screen::lobby && online_.playing()) go(Screen::play);
-} else if (screen_ == Screen::play) {
-    game_.tick({inputs_[0].consume(), inputs_[1].consume()}, dt); // local play, unchanged
-}
-// then keep the existing lost/won checks on game_.state(); on the joiner it comes from the host
-```
+**3. Game loop.** `update()` calls `update_online()` while `online_.active()`. It runs `online_.update(...)`
+**every frame on every screen** (that also does the handshake in the lobby) instead of `game_.tick(...)`, sends
+a lost connection back to the menu, enters play when the host starts, and switches between the play and pause
+screens from the shared pause. The existing lost/won checks on `game_.state()` then run unchanged; on the
+joiner that state comes from the host.
 
 **4. Keys and buttons while online**
 
 | Action | Online call |
 |---|---|
 | E (lever) | `online_.interact();` instead of `game_.interact()` |
-| Escape (pause / resume) | `online_.request(ControlKind::pause)` / `resume`; show the pause screen while `online_.paused()` (either player can pause both) |
-| RETRY | `online_.request(ControlKind::restart)` |
-| NEXT LEVEL | host: `advance_campaign()` as now; the joiner loads the same level by itself. Hide it on the joiner (`online_.role() == OnlinePlay::Role::joiner`) |
-| Joiner on the won/lost screen | go back to play when `game_.state()` is `playing` again (the host retried or moved on) |
-
-The host plays fire and the joiner plays water; on each machine both key sets steer that one character.
+| Esc, PAUSE, RESUME | `online_.request(ControlKind::pause)` / `resume`; the pause screen follows `online_.paused()` |
+| RETRY / RESTART | `online_.request(ControlKind::restart)` then `resume`; the joiner returns to play when the host's level is playing again |
+| NEXT LEVEL, REPLAY CAMPAIGN | host only (disabled on the joiner); the joiner loads the same level by itself |
+| Window loses focus | held keys are dropped; online play is not paused |
 
 **Build the game** (downloads SDL3 the first time):
 

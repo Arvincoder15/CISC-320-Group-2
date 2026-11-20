@@ -111,6 +111,8 @@ public:
         interact_ = false;
     }
 
+    // Why the last host()/join() failed, e.g. "Could not open port 7777".
+    const std::string& error() const { return session_->last_error(); }
     Role role() const { return role_; }
     bool active() const { return role_ != Role::offline; }
     bool connected() const { return host_ ? host_->client_ready() : client_ && client_->ready(); }

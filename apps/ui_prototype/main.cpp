@@ -9,6 +9,7 @@
 #include "demo_level.hpp"
 #include "font_metrics.hpp"
 #include "demo_walkthrough.hpp"
+#include "net_play.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -238,6 +239,17 @@ public:
         check(exit_visible(game_.definition().exits[0], "FIRE EXIT") &&
               exit_visible(game_.definition().exits[1], "WATER EXIT"),
               "Hard keeps both complete exit portals and labels in frame");
+        // Online lobby (Henry): hosting works, Start Game waits for a second player, Back leaves the session.
+        // Joining and playing online are covered by test_ui_net.
+        go(Screen::menu); draw(); click(640, 315);
+        check(screen_ == Screen::lobby, "Multiplayer opens the lobby");
+        draw(); click(325, 445);
+        check(online_.role() == prototype::OnlinePlay::Role::host &&
+              online_.status().rfind("Waiting for a player", 0) == 0, "Host Session starts hosting");
+        update(0.01F); draw(); click(955, 445);
+        check(screen_ == Screen::lobby && !online_.playing(), "Start Game waits for a second player");
+        draw(); click(640, 625);
+        check(!online_.active() && screen_ == Screen::menu, "Back leaves the session");
         if (!captures.empty()) {
             std::filesystem::create_directories(captures);
             SDL_SetWindowSize(window_.get(), 1920, 1080);
@@ -275,6 +287,7 @@ private:
     std::array<prototype::PlayableLevelDefinition, 3> campaign_;
     std::size_t campaign_index_{0};
     prototype::DemoLevel game_;
+    prototype::OnlinePlay online_{game_, campaign_, campaign_index_}; // networked play (Henry); idle in local play
     std::optional<engine::LevelDocument> inspection_document_;
     std::optional<engine::LevelInspectionSnapshot> inspection_snapshot_;
     engine::InspectionMetrics inspection_metrics_{};
@@ -709,8 +722,8 @@ private:
         case 2: go(Screen::lobby); break;
         case 3: previous_=screen_; draft_=settings_; go(Screen::settings); break;
         case 4: running_=false; break;
-        case 5: go(Screen::play); break;
-        case 6: go(Screen::menu); break;
+        case 5: if(online_.active()) online_.request(elemental_coop::ControlKind::resume); else go(Screen::play); break;
+        case 6: online_.leave(); go(Screen::menu); break;
         case 7: apply_settings(); break;
         case 8: go(previous_); break;
         case 9: draft_.audio.master_volume=std::max(0.0F,draft_.audio.master_volume-0.1F); break;
@@ -725,8 +738,17 @@ private:
         case 17: selected_=1-selected_; break;
         case 18: reset_game(); notice_="Active level reloaded."; break;
         case 19: tone(); break;
-        case 20: go(Screen::pause); break;
-        case 33: reset_game(); go(Screen::play); break;
+        case 20: if(online_.active()) online_.request(elemental_coop::ControlKind::pause); else go(Screen::pause); break;
+        case 33:
+            if(!online_.active()) { reset_game(); go(Screen::play); break; }
+            // Online the host restarts the level for both; the joiner returns to play when it sees that.
+            online_.request(elemental_coop::ControlKind::restart);
+            online_.request(elemental_coop::ControlKind::resume);
+            if(online_.role()==prototype::OnlinePlay::Role::host) { clear_input(); reset_animation(); go(Screen::play); }
+            break;
+        case 40: if(!online_.host()) notice_=online_.error(); break;
+        case 41: if(!online_.join(address_)) notice_=online_.error(); break;
+        case 42: start_campaign(); online_.start(); go(Screen::play); break;
         case 34: advance_campaign(); break;
         case 21:
             tools_tab_ = ToolsTab::level_document;
@@ -800,7 +822,8 @@ private:
     void handle(SDL_Event& e) {
         if(e.type==SDL_EVENT_QUIT) { running_=false; return; }
         if(e.type==SDL_EVENT_WINDOW_FOCUS_LOST) {
-            clear_input(); if(screen_==Screen::play) go(Screen::pause); return;
+            // Online the other player keeps playing; this machine just drops its held keys.
+            clear_input(); if(screen_==Screen::play && !online_.active()) go(Screen::pause); return;
         }
         if(e.type==SDL_EVENT_MOUSE_MOTION || e.type==SDL_EVENT_MOUSE_BUTTON_DOWN) {
             SDL_ConvertEventToRenderCoordinates(renderer_.get(),&e);
@@ -827,7 +850,10 @@ private:
             if(scan==SDL_SCANCODE_F12) { capture_=true; return; }
             if(scan==SDL_SCANCODE_F3) { if(screen_==Screen::tools) go(tools_return_); else { tools_return_=screen_;go(Screen::tools); } return; }
             if(scan==SDL_SCANCODE_ESCAPE) {
-                if(screen_==Screen::play) go(Screen::pause);
+                // Online, pause is shared: ask the host, and update() follows the shared state.
+                if(online_.active() && (screen_==Screen::play || screen_==Screen::pause))
+                    online_.request(screen_==Screen::play ? elemental_coop::ControlKind::pause : elemental_coop::ControlKind::resume);
+                else if(screen_==Screen::play) go(Screen::pause);
                 else if(screen_==Screen::pause) go(Screen::play);
                 else if(screen_==Screen::settings) go(previous_);
                 else if(screen_==Screen::tools) go(tools_return_);
@@ -863,7 +889,7 @@ private:
             }
         }
         if(screen_!=Screen::play || (down && e.key.repeat)) return;
-        if(down && scan==SDL_SCANCODE_E) { game_.interact(); return; }
+        if(down && scan==SDL_SCANCODE_E) { if(online_.active()) online_.interact(); else game_.interact(); return; }
         const std::array<std::array<SDL_Scancode,3>,2> keys{{{SDL_SCANCODE_A,SDL_SCANCODE_D,SDL_SCANCODE_W},
             {SDL_SCANCODE_LEFT,SDL_SCANCODE_RIGHT,SDL_SCANCODE_UP}}};
         for(std::size_t p=0;p<2;++p) for(int a=0;a<3;++a) if(scan==keys[p][a]) {
@@ -871,10 +897,26 @@ private:
             if(down) inputs_[p].press(action); else inputs_[p].release(action);
         }
     }
+    // Online: OnlinePlay runs the level (host) or copies the host's level (joiner), every frame on every
+    // screen. Screens follow the shared state. Returns false when nothing below should run this frame.
+    bool update_online(float dt) {
+        online_.update({inputs_[0].consume(),inputs_[1].consume()},dt);
+        if(online_.connection_lost()) { notice_=online_.status(); online_.leave(); go(Screen::menu); return false; }
+        if(!online_.playing()) return false; // still in the lobby
+        if(screen_==Screen::lobby) go(Screen::play);
+        if(screen_==Screen::play && online_.paused()) go(Screen::pause);
+        else if(screen_==Screen::pause && !online_.paused()) go(Screen::play);
+        // The host retried or moved on: the joiner leaves the result screen too.
+        if((screen_==Screen::lost || screen_==Screen::won) && game_.state()==elemental_coop::RoundState::playing) {
+            reset_animation(); go(Screen::play);
+        }
+        return screen_==Screen::play;
+    }
     void update(float dt) {
         elapsed_+=dt;
+        if(online_.active() && !update_online(dt)) return;
         if(screen_!=Screen::play || dt<=0) return;
-        game_.tick({inputs_[0].consume(),inputs_[1].consume()},dt);
+        if(!online_.active()) game_.tick({inputs_[0].consume(),inputs_[1].consume()},dt);
         for(std::size_t i=0;i<2;++i) {
             const auto& state=game_.player(i);
             if(std::abs(state.body.velocity.x)>0.01F) {
@@ -1155,11 +1197,18 @@ private:
         case Screen::lobby:
             center(65,"MULTIPLAYER LOBBY",4); rounded(139,154,1002,432,12,blue); rounded(141,156,998,428,11,panel);
             text(190,215,"Server",2); rect(310,200,760,55,navy); text(330,219,address_,2);
-            text(190,300,"Player 1: Local",2,green); text(190,350,"Player 2: Not connected",2,muted);
-            button(190,420,270,"HOST SESSION",0,false); button(505,420,270,"JOIN SESSION",0,false);
-            button(820,420,270,"START GAME",0,false);
-            center(505,"Network transport is not connected in this prototype.",2,muted);
+        {
+            const bool hosting=online_.role()==prototype::OnlinePlay::Role::host;
+            const bool joining=online_.role()==prototype::OnlinePlay::Role::joiner;
+            text(190,300,hosting?"Player 1 (fire): You":joining?"Player 1 (fire): Host":"Player 1 (fire): Not connected",2,
+                 hosting||online_.connected()?green:muted);
+            text(190,350,joining?"Player 2 (water): You":online_.connected()?"Player 2 (water): Connected":"Player 2 (water): Not connected",2,
+                 joining||online_.connected()?green:muted);
+            button(190,420,270,"HOST SESSION",40,!online_.active()); button(505,420,270,"JOIN SESSION",41,!online_.active());
+            button(820,420,270,"START GAME",42,hosting&&online_.connected());
+            center(505,online_.active()?online_.status():"Host a session, or type the host's address and join.",2,muted);
             button(440,600,400,"BACK",6); break;
+        }
         case Screen::play: gameplay(); button(1090,20,155,"PAUSE",20); break;
         case Screen::pause:
             gameplay(); rect(0,0,1280,690,{0,12,29,155}); rounded(389,169,502,456,14,blue); rounded(391,171,498,452,13,panel); center(210,"PAUSED",4);
@@ -1187,13 +1236,14 @@ private:
             center(145,campaign_complete?"All three levels completed cooperatively":
                    won?"Both players reached their exits":"A character was defeated",2,muted);
             character(470,420,true,3); character(810,420,false,3);
+            const bool joining=online_.role()==prototype::OnlinePlay::Role::joiner; // the host picks the level
             if(won && !campaign_complete) {
-                button(100,505,340,"NEXT LEVEL",34);
+                button(100,505,340,"NEXT LEVEL",34,!joining);
                 button(470,505,340,"REPLAY LEVEL",33);
                 button(840,505,340,"MAIN MENU",6);
                 center(610,game_.definition().name,2,muted);
             } else if(campaign_complete) {
-                button(260,505,350,"REPLAY CAMPAIGN",1);
+                button(260,505,350,"REPLAY CAMPAIGN",1,!joining);
                 button(670,505,350,"MAIN MENU",6);
             } else {
                 button(260,505,350,"RETRY",33);
