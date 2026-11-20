@@ -9,6 +9,9 @@ namespace engine::net {
 namespace {
 constexpr std::size_t max_packet_bytes = 512;          // largest co-op message is under 50 bytes
 constexpr auto connect_timeout = std::chrono::seconds(5);
+// ENet pings every 500 ms, so 2.5 s of silence means the peer is gone. ENet's own timeout only fires at
+// exponential retry points (measured 4.4–4.8 s), which misses the 3 s requirement (NFR-17).
+constexpr auto peer_silence_limit = std::chrono::milliseconds(2500);
 
 bool enet_ready() {
     static const bool ready = [] {
@@ -65,7 +68,6 @@ public:
             switch (event.type) {
             case ENET_EVENT_TYPE_CONNECT:
                 peer_ = event.peer;
-                enet_peer_timeout(peer_, 0, 1000, 3000); // report a vanished peer within 3 s (NFR-17)
                 state_ = SessionState::connected;
                 events.push_back({Event::Kind::connected, {}});
                 break;
@@ -92,7 +94,20 @@ public:
                 break;
             }
         }
-        if (state_ == SessionState::connecting && std::chrono::steady_clock::now() > deadline_) {
+        const auto now = std::chrono::steady_clock::now();
+        if (peer_ && peer_->lastReceiveTime != seen_receive_time_) { // ENet updates this on every ack, pings included
+            seen_receive_time_ = peer_->lastReceiveTime;
+            last_heard_ = now;
+        }
+        if (!events.empty()) last_heard_ = now;
+        if (state_ == SessionState::connected && now - last_heard_ > peer_silence_limit) {
+            enet_peer_reset(peer_);
+            peer_ = nullptr;
+            state_ = SessionState::disconnected;
+            error_ = "Connection lost";
+            events.push_back({Event::Kind::disconnected, {}});
+        }
+        if (state_ == SessionState::connecting && now > deadline_) {
             enet_peer_reset(peer_);
             peer_ = nullptr;
             state_ = SessionState::failed;
@@ -133,6 +148,8 @@ private:
     std::string error_;
     std::uint16_t port_{0};
     std::chrono::steady_clock::time_point deadline_{};
+    std::chrono::steady_clock::time_point last_heard_{};
+    enet_uint32 seen_receive_time_{0};
 };
 }
 
