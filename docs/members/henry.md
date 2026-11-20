@@ -4,13 +4,15 @@ Secondary responsibility: Repository Design/Maintenance.
 
 ## What is here
 
-LoopbackTransport is a bounded test queue. No sockets, remote peers, serialization, or multiplayer are implemented.
+Two-player networked play over ENet: connection and disconnect detection, the co-op protocol, and host/client
+sync drivers, with a two-process demo. How to use it, test results and open items: [NETWORKING.md](../NETWORKING.md).
 
-- Public code: `engine/include/engine/networking.hpp`
-- Implementation: `engine/src/networking.cpp`
-- Example tests: `tests/networking_test.cpp`
-- Build: follow [SETUP](../SETUP.md).
-- Run your tests: `ctest --test-dir build -C Debug -R '^networking$' --output-on-failure` (use double quotes in Windows shells).
+- Engine API: `engine/include/engine/networking.hpp` (`Session`, byte reader/writer, in-memory test pair)
+- Implementation: `engine/src/networking.cpp`, `engine/src/enet_session.cpp`
+- Game protocol and drivers: `games/elemental_coop/include/elemental_coop/net.hpp`, `games/elemental_coop/src/net.cpp`
+- Demo: `engine_demo --host <port>` / `engine_demo --join <address> <port>` (`apps/headless_demo.cpp`)
+- Tests: `tests/net_session_test.cpp`, `tests/coop_net_test.cpp` (old queue: `tests/networking_test.cpp`)
+- Run them: `ctest --test-dir build -C Debug -R "net_session|coop_net|networking" --output-on-failure`
 
 ## Why this subsystem exists
 

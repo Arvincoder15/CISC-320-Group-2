@@ -50,7 +50,7 @@ Add new `.cpp` files to the owning target in `CMakeLists.txt` with `target_sourc
 
 ## Introducing the intended stack
 
-Dependency versions and acquisition strategy are deliberately unresolved. No automatic fetch occurs during configuration. For each dependency: record a reviewed version/license, choose installed packages or a pinned fetch method, add its target to the owning module, then verify Windows/macOS/Linux CI.
+Dependency versions and acquisition strategy are deliberately unresolved. By default the only automatic fetch is ENet v1.3.18 for networking (SDL3 is fetched only with `GROUP2_FETCH_SDL=ON`). CMake `FetchContent` downloads it on the first configure, so that first configure needs internet (see [NETWORKING.md](NETWORKING.md)). For each dependency: record a reviewed version/license, choose installed packages or a pinned fetch method, add its target to the owning module, then verify Windows/macOS/Linux CI.
 
 - **SDL3:** Aryaman starts the renderer/window backend with Rohan agreeing who polls events. Arvin supplies resource loader adapters and shutdown tests.
 - **JSON:** Arvin's branch vendors nlohmann/json 3.12.0 for engine settings (private include, MIT license). Team review remains pending. Gunveer owns level schemas/import; Henry owns protocol serialization.
