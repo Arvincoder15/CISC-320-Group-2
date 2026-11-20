@@ -69,9 +69,10 @@ GameplayCamera gameplay_camera(const std::string& level_name) {
 
 class App {
 public:
-    explicit App(std::filesystem::path settings_path)
+    App(std::filesystem::path settings_path, std::unique_ptr<engine::net::Session> session)
         : assets_(asset_directory()), path_(std::move(settings_path)),
-          campaign_(load_campaign_definitions()), game_(campaign_[0]) {
+          campaign_(load_campaign_definitions()), game_(campaign_[0]),
+          online_(game_, campaign_, campaign_index_, std::move(session)) {
         const auto startup = engine::load_user_settings(path_);
         settings_ = draft_ = startup.settings;
         if (startup.status == engine::SettingsLoadStatus::failed) {
@@ -239,8 +240,7 @@ public:
         check(exit_visible(game_.definition().exits[0], "FIRE EXIT") &&
               exit_visible(game_.definition().exits[1], "WATER EXIT"),
               "Hard keeps both complete exit portals and labels in frame");
-        // Online lobby (Henry): hosting works, Start Game waits for a second player, Back leaves the session.
-        // Joining and playing online are covered by test_ui_net.
+        // Exercise lobby controls with loopback. net_session checks real ENet sockets separately.
         go(Screen::menu); draw(); click(640, 315);
         check(screen_ == Screen::lobby, "Multiplayer opens the lobby");
         draw(); click(325, 445);
@@ -287,7 +287,7 @@ private:
     std::array<prototype::PlayableLevelDefinition, 3> campaign_;
     std::size_t campaign_index_{0};
     prototype::DemoLevel game_;
-    prototype::OnlinePlay online_{game_, campaign_, campaign_index_}; // networked play (Henry); idle in local play
+    prototype::OnlinePlay online_;
     std::optional<engine::LevelDocument> inspection_document_;
     std::optional<engine::LevelInspectionSnapshot> inspection_snapshot_;
     engine::InspectionMetrics inspection_metrics_{};
@@ -1310,7 +1310,9 @@ int main(int argc,char** argv) {
             path=std::filesystem::path(folder)/"settings.json"; SDL_free(folder);
         }
         std::cout<<"Settings: "<<path<<'\n';
-        App app(path);
+        // The UI smoke test can run without socket access or a free network port.
+        auto session = smoke ? engine::net::make_loopback_pair().first : engine::net::make_enet_session();
+        App app(path, std::move(session));
         if(smoke) { app.smoke_test(argc>2?std::filesystem::path(argv[2]):std::filesystem::path{}); std::filesystem::remove_all(path.parent_path()); return 0; }
         return app.run();
     } catch(const std::exception& e) { std::cerr<<"UI prototype: "<<e.what()<<'\n'; return 1; }
