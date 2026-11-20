@@ -1,6 +1,7 @@
 #pragma once
 
 #include "elemental_coop/game.hpp"
+#include "elemental_coop/net.hpp"
 #include "playable_level.hpp"
 #include "acid_pursuit.hpp"
 #include <array>
@@ -216,6 +217,37 @@ public:
         return false;
     }
     bool open() const { return all_gates_open(); }
+
+    // Networking (Henry): in online play the joining player's level does not simulate; it copies the
+    // host's state each frame. Gates and enemies are matched by level-file order.
+    void apply_network_state(const elemental_coop::NetSnapshot& state) {
+        auto& runtime = active_->runtime;
+        for (std::size_t i = 0; i < elemental_coop::player_count; ++i) {
+            const auto& from = state.players[i];
+            auto& player = runtime.players[i];
+            runtime.world.find(player.entity)->position = {from.x, from.y};
+            player.body.velocity = {from.vx, from.vy};
+            if (auto* body = runtime.world.get<engine::Body>(player.entity)) body->velocity = player.body.velocity;
+            player.grounded = from.grounded;
+            player.alive = from.alive;
+            player.at_exit = from.at_exit;
+            runtime.player_facing_left[i] = from.facing_left;
+        }
+        for (std::size_t i = 0; i < runtime.gates.size() && i < state.gates.size(); ++i) {
+            auto& gate = runtime.gates[i];
+            gate.lever_on = state.gates[i].lever_on;
+            gate.open = state.gates[i].open;
+            // Only "someone is on the plate" is drawn, so the slot number is not sent.
+            gate.plate_operator = state.gates[i].plate_occupied ? std::optional<std::size_t>{0} : std::nullopt;
+        }
+        for (std::size_t i = 0; i < runtime.enemies.size() && i < state.enemies.size(); ++i) {
+            auto& enemy = runtime.enemies[i];
+            runtime.world.find(enemy.entity)->position = {state.enemies[i].x, state.enemies[i].y};
+            enemy.facing_left = state.enemies[i].facing_left;
+            enemy.animation_time = state.enemies[i].animation_time;
+        }
+        runtime.state = state.round;
+    }
 
 private:
     struct GateState {

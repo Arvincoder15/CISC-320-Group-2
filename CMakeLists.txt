@@ -8,6 +8,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include(CTest)
 
+# ENet v1.3.18 (MIT): networking transport, see docs/DECISIONS.md ADR NET-2.
+include(FetchContent)
+FetchContent_Declare(enet GIT_REPOSITORY https://github.com/lsalzman/enet.git GIT_TAG v1.3.18 GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(enet)
+# ENet's CMake only sets a directory include path and links Winsock for MinGW; fix both for consumers.
+target_include_directories(enet SYSTEM INTERFACE ${enet_SOURCE_DIR}/include)
+if(WIN32)
+    target_link_libraries(enet INTERFACE ws2_32 winmm)
+endif()
+
 function(group2_target target)
     target_compile_features(${target} PUBLIC cxx_std_20)
     if(MSVC)
@@ -33,14 +43,20 @@ target_include_directories(engine_tools SYSTEM PRIVATE third_party/nlohmann_json
 
 target_sources(engine_infrastructure PRIVATE engine/src/resource_files.cpp engine/src/configuration.cpp)
 target_include_directories(engine_infrastructure SYSTEM PRIVATE third_party/nlohmann_json/include)
+target_sources(engine_networking PRIVATE engine/src/enet_session.cpp)
+target_link_libraries(engine_networking PRIVATE enet)
 
 add_library(elemental_coop_game STATIC games/elemental_coop/src/game.cpp)
 target_include_directories(elemental_coop_game PUBLIC games/elemental_coop/include)
 target_link_libraries(elemental_coop_game PUBLIC engine_architecture engine_physics engine_interaction)
 group2_target(elemental_coop_game)
 
+add_library(elemental_coop_net STATIC games/elemental_coop/src/net.cpp)
+target_link_libraries(elemental_coop_net PUBLIC elemental_coop_game engine_networking)
+group2_target(elemental_coop_net)
+
 add_executable(engine_demo apps/headless_demo.cpp)
-target_link_libraries(engine_demo PRIVATE elemental_coop_game engine_rendering engine_networking engine_ai engine_tools engine_infrastructure)
+target_link_libraries(engine_demo PRIVATE elemental_coop_net elemental_coop_game engine_rendering engine_networking engine_ai engine_tools engine_infrastructure)
 group2_target(engine_demo)
 
 add_executable(infrastructure_demo apps/infrastructure_demo.cpp)
@@ -53,10 +69,10 @@ group2_target(ai_demo)
 
 if(BUILD_TESTING)
     configure_file(tests/fixtures/tiled_level.json fixtures/tiled_level.json COPYONLY)
-    foreach(suite IN ITEMS architecture rendering physics networking ai tools interaction infrastructure resource_files configuration gameplay integration)
+    foreach(suite IN ITEMS architecture rendering physics networking ai tools interaction infrastructure resource_files configuration gameplay integration net_session coop_net)
         add_executable(test_${suite} tests/${suite}_test.cpp)
         target_include_directories(test_${suite} PRIVATE tests)
-        target_link_libraries(test_${suite} PRIVATE elemental_coop_game engine_rendering engine_networking engine_ai engine_tools engine_infrastructure)
+        target_link_libraries(test_${suite} PRIVATE elemental_coop_net elemental_coop_game engine_rendering engine_networking engine_ai engine_tools engine_infrastructure)
         group2_target(test_${suite})
         add_test(NAME ${suite} COMMAND test_${suite})
     endforeach()
