@@ -106,7 +106,7 @@ Owner / reviewers: Henry / Rocco (schedule), Blake
 Context and problem: NFR-18 says "under agreed test conditions" without defining them, NFR-17 asks to notify both players even when one side's game has died, and the RAD leaves online pause undefined.
 Decision and rationale:
 - Test conditions for NFR-18: localhost, a LAN, and a simulated link with about 100 ms delay and 5% loss on the unreliable channel. Pass: after one second without input, the client's latest snapshot equals the host's state for the same tick.
-- NFR-17 is reworded: the remaining player is notified within 3 seconds of losing the connection (ENet peer timeout). A third player trying to join is refused.
+- NFR-17 is reworded: the remaining player is notified within 3 seconds of losing the connection. ENet's built-in timeout was measured at 4.4–4.8 s (it only fires at exponential retry points), so the session uses its own watchdog: ENet pings every 0.5 s, and 2.5 s without any traffic counts as lost (measured 2.1–2.5 s). A third player trying to join is refused.
 - Online pause and restart: either player can pause, which pauses both; only the host's game restarts, and the joiner's Restart sends a request.
 - Demo network: a phone hotspot or ethernet link between two laptops, because campus Wi-Fi often blocks device-to-device traffic. Fallback: two game windows on one laptop. Local co-op remains the playable product if networking fails, as the RAD states.
 

@@ -55,6 +55,7 @@ struct Link {
     std::array<std::deque<Pending>, 2> inbox;
     std::array<int, 2> polls{};
     std::array<SessionState, 2> state{SessionState::idle, SessionState::idle};
+    std::array<bool, 2> listening{}; // like ENet: a host accepts a new joiner after one leaves, until close()
     void deliver(int to, Event event) { inbox[to].push_back({polls[to] + conditions.delay_polls, std::move(event)}); }
 };
 
@@ -65,12 +66,13 @@ public:
     bool host(std::uint16_t port) override {
         if (busy()) return fail("Session already in use");
         link_->state[me_] = SessionState::hosting;
+        link_->listening[me_] = true;
         port_ = port;
         return true;
     }
     bool join(const std::string&, std::uint16_t) override {
         if (busy()) return fail("Session already in use");
-        if (link_->state[peer_] != SessionState::hosting) {
+        if (!link_->listening[peer_]) {
             link_->state[me_] = SessionState::failed;
             return fail("Could not reach host");
         }
@@ -111,6 +113,7 @@ public:
         if (peer == SessionState::connecting || peer == SessionState::connected)
             link_->deliver(peer_, {Event::Kind::disconnected, {}});
         link_->state[me_] = SessionState::idle;
+        link_->listening[me_] = false;
         link_->inbox[me_].clear();
         port_ = 0;
     }

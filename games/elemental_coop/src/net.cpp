@@ -115,7 +115,10 @@ void CoopHost::handle(std::span<const std::byte> bytes) {
         last_input_tick_ = 0;
         remote_move_ = 0;
         remote_jumps_ = 0;
+        remote_jump_ = false;
+        quit_pending_ = false; // a quit from before this joiner arrived must not end their round
         send(session_, Channel::reliable, Welcome{});
+        if (paused_) send(session_, Channel::reliable, Control{ControlKind::pause}); // new joiner learns the pause
         return;
     }
     if (!ready_) return;
@@ -144,7 +147,13 @@ void CoopClient::update(const engine::InputFrame& local) {
         if (event.kind != engine::net::Event::Kind::message) continue;
         const auto message = decode(event.payload);
         if (!message) continue;
-        if (std::holds_alternative<Welcome>(*message)) ready_ = true;
+        if (std::holds_alternative<Welcome>(*message)) { // new session: the host's ticks and jump count restart
+            ready_ = true;
+            paused_ = false;
+            tick_ = 0;
+            jumps_ = 0;
+            latest_.reset();
+        }
         if (std::holds_alternative<Reject>(*message)) {
             rejected_ = true;
             session_.close();

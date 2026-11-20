@@ -1,6 +1,7 @@
 #include "elemental_coop/net.hpp"
 #include "test_support.hpp"
 #include <limits>
+#include <map>
 using namespace elemental_coop;
 using engine::InputFrame;
 using engine::net::Channel;
@@ -112,5 +113,117 @@ int main() { return run_test([] {
         CHECK(reply.size() == 1);
         const auto decoded = decode(reply[0].payload);
         CHECK(decoded && std::holds_alternative<Reject>(*decoded));
+    }
+
+    {   // Lost jump: the packet carrying the press never arrives; the next one still jumps exactly once.
+        Game other;
+        auto [hs, cs] = engine::net::make_loopback_pair();
+        CHECK(hs->host(1) && cs->join("loopback", 1));
+        CoopHost other_host(other, *hs);
+        cs->poll();
+        CHECK(cs->send(Channel::reliable, encode(Hello{})));
+        other_host.update({}, 1.0F / 60.0F);
+        CHECK(other_host.client_ready());
+        // NetInput{10, 0, 1} carried the press and was lost, so it is simply never sent.
+        CHECK(cs->send(Channel::unreliable, encode(NetInput{11, 0, 1})));
+        other_host.update({}, 1.0F / 60.0F);
+        CHECK(!other.player(1).grounded);
+        for (std::uint32_t t = 12; t < 80; ++t) { // same count repeated while falling and after landing
+            CHECK(cs->send(Channel::unreliable, encode(NetInput{t, 0, 1})));
+            other_host.update({}, 1.0F / 60.0F);
+        }
+        CHECK(other.player(1).grounded); // landed and never jumped again
+    }
+
+    // The rest runs on the NET-5 test link: ~100 ms delay (6 polls at 60 fps), 5% unreliable loss, fixed seed.
+    const engine::net::LinkConditions bad_link{6, 5, 42};
+    struct Session2 {
+        Game game;
+        std::unique_ptr<engine::net::Session> host_session, client_session;
+        std::optional<CoopHost> host;
+        std::optional<CoopClient> client;
+        std::map<std::uint32_t, NetSnapshot> host_history; // host state at every tick it reached
+        explicit Session2(engine::net::LinkConditions link) {
+            std::tie(host_session, client_session) = engine::net::make_loopback_pair(link);
+            CHECK(host_session->host(1) && client_session->join("loopback", 1));
+            host.emplace(game, *host_session);
+            client.emplace(*client_session);
+        }
+        void step(InputFrame host_input = {}, InputFrame client_input = {}) {
+            client->update(client_input);
+            host->update(host_input, 1.0F / 60.0F);
+            host_history[host->tick()] = snapshot_of(game, host->tick());
+        }
+    };
+
+    {   // Consistency (NFR-18): every snapshot the joiner holds is exactly the host's state at that tick.
+        Session2 s(bad_link);
+        for (int i = 0; i < 30; ++i) s.step();
+        CHECK(s.host->client_ready() && s.client->ready());
+        for (int frame = 0; frame < 300; ++frame) {
+            const float direction = (frame / 50) % 2 == 0 ? 1.0F : -1.0F;
+            s.step(InputFrame{-direction, frame % 45 == 0, false}, InputFrame{direction, frame % 40 == 0, false});
+            if (const auto& seen = s.client->latest()) CHECK(seen->tick > 0 && *seen == s.host_history.at(seen->tick));
+        }
+        for (int frame = 0; frame < 60; ++frame) s.step();
+        const auto& seen = s.client->latest();
+        CHECK(seen && *seen == s.host_history.at(seen->tick));
+        CHECK(seen->players == snapshot_of(s.game, s.host->tick()).players); // settled: joiner shows the host's world
+        CHECK(s.host->tick() - seen->tick <= 10); // about 6 ticks behind on a 100 ms link
+    }
+    {   // Pause and restart from the joiner arrive through the delay and reach both sides.
+        Session2 s(bad_link);
+        for (int i = 0; i < 30; ++i) s.step();
+        for (int i = 0; i < 60; ++i) s.step({}, InputFrame{1, false, false});
+        s.client->request(ControlKind::pause);
+        for (int i = 0; i < 20; ++i) s.step();
+        CHECK(s.host->paused() && s.client->paused());
+        s.client->request(ControlKind::restart);
+        s.client->request(ControlKind::resume);
+        for (int i = 0; i < 30; ++i) s.step();
+        CHECK(!s.host->paused() && !s.client->paused());
+        CHECK(s.client->latest()->players[1].x == 128 && s.client->latest()->players[0].x == 64);
+    }
+    {   // Reconnecting with the same client: a paused host announces the pause, and a new host's low ticks
+        // are accepted instead of being treated as stale.
+        Game first_game, second_game;
+        auto [hs, cs] = engine::net::make_loopback_pair();
+        CoopClient joiner(*cs);
+        const auto play = [&](CoopHost& h, int times) {
+            for (int i = 0; i < times; ++i) {
+                joiner.update({});
+                h.update({}, 1.0F / 60.0F);
+            }
+        };
+        CHECK(hs->host(1) && cs->join("loopback", 1));
+        CoopHost first(first_game, *hs);
+        play(first, 200);
+        first.request(ControlKind::pause);
+        cs->close();
+        play(first, 2);
+        CHECK(!first.client_ready());
+        CHECK(cs->join("loopback", 1));
+        play(first, 4);
+        CHECK(first.client_ready() && joiner.ready() && joiner.paused());
+
+        cs->close();
+        hs->close(); // the host program restarts: new game, ticks start again from zero
+        CHECK(hs->host(1) && cs->join("loopback", 1));
+        CoopHost second(second_game, *hs);
+        play(second, 6);
+        CHECK(joiner.ready() && !joiner.paused());
+        CHECK(joiner.latest() && joiner.latest()->tick < 10 && *joiner.latest() == snapshot_of(second_game, joiner.latest()->tick));
+    }
+    {   // Disconnect while playing: the host stops simulating once the joiner is gone.
+        Session2 s(bad_link);
+        for (int i = 0; i < 30; ++i) s.step();
+        for (int i = 0; i < 30; ++i) s.step({}, InputFrame{1, false, false});
+        s.client_session->close();
+        for (int i = 0; i < 20; ++i) s.host->update({}, 1.0F / 60.0F);
+        CHECK(!s.host->client_ready());
+        const auto stopped = s.host->tick();
+        for (int i = 0; i < 20; ++i) s.host->update({}, 1.0F / 60.0F);
+        CHECK(s.host->tick() == stopped);
+        CHECK(s.host_session->state() == engine::net::SessionState::disconnected);
     }
 }); }

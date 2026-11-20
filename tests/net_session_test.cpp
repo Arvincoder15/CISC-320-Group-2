@@ -153,6 +153,25 @@ int main() { return run_test([] {
         CHECK(pump({&h}, [&] { return host->state() == SessionState::disconnected; }));
         CHECK(count(h, Event::Kind::disconnected) == 1);
     }
+    {   // A second host/join on a live session is refused without breaking it; a peer that goes silent
+        // (stops polling, like a frozen or killed program) is reported lost after 2.5 s, inside NFR-17's 3 s.
+        auto host = make_enet_session();
+        auto client = make_enet_session();
+        CHECK(host->host(0) && client->join("127.0.0.1", host->port()));
+        Probe h{*host, {}}, c{*client, {}};
+        CHECK(pump({&h, &c}, [&] {
+            return host->state() == SessionState::connected && client->state() == SessionState::connected;
+        }));
+        CHECK(!client->join("127.0.0.1", host->port()) && !client->last_error().empty());
+        CHECK(!host->host(0));
+        CHECK(client->state() == SessionState::connected && client->send(Channel::reliable, bytes_of({7})));
+        CHECK(pump({&h, &c}, [&] { return count(h, Event::Kind::message) == 1; }));
+
+        const auto silent_since = std::chrono::steady_clock::now(); // client is never polled again
+        CHECK(pump({&h}, [&] { return host->state() == SessionState::disconnected; }, 4000ms));
+        const auto noticed = std::chrono::steady_clock::now() - silent_since;
+        CHECK(noticed >= 2000ms && noticed <= 3000ms);
+    }
     {   // An address that cannot be resolved fails immediately with a message.
         auto bad = make_enet_session();
         CHECK(!bad->join("invalid..host", 7777));

@@ -51,7 +51,7 @@ public:
     }
     bool send(Channel channel, std::span<const std::byte> bytes) override {
         if (state_ != SessionState::connected) return false;
-        const auto flags = channel == Channel::reliable ? ENET_PACKET_FLAG_RELIABLE : 0u;
+        const enet_uint32 flags = channel == Channel::reliable ? static_cast<enet_uint32>(ENET_PACKET_FLAG_RELIABLE) : 0u;
         ENetPacket* packet = enet_packet_create(bytes.data(), bytes.size(), flags);
         if (!packet) return false;
         if (enet_peer_send(peer_, static_cast<enet_uint8>(channel), packet) != 0) {
@@ -129,7 +129,10 @@ public:
     }
 private:
     bool start() {
-        if (host_) return fail("Session already in use");
+        if (host_) {
+            error_ = "Session already in use"; // refuse without touching the live connection
+            return false;
+        }
         error_.clear();
         if (!enet_ready()) return fail("Network library failed to start");
         return true;
