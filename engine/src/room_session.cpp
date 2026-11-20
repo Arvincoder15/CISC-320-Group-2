@@ -1,7 +1,9 @@
 #include "engine/room_relay.hpp"
 #include "room_wire.hpp"
 
+#include <charconv>
 #include <chrono>
+#include <stdexcept>
 
 namespace engine::net {
 namespace {
@@ -123,6 +125,24 @@ private:
 
 std::unique_ptr<Session> make_room_session(std::string address, std::uint16_t port) {
     return std::make_unique<RoomSession>(std::move(address), port);
+}
+
+std::unique_ptr<Session> make_room_session(std::string endpoint) {
+    const auto separator = endpoint.find(':');
+    auto address = endpoint.substr(0, separator);
+    constexpr std::string_view host_characters =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.-";
+    if (address.empty() || address.find_first_not_of(host_characters) != std::string::npos)
+        throw std::invalid_argument("Relay endpoint must be a hostname or IPv4 address with an optional :port");
+
+    unsigned port = room_relay_port;
+    if (separator != std::string::npos) {
+        const std::string_view suffix = std::string_view(endpoint).substr(separator + 1);
+        const auto [end, error] = std::from_chars(suffix.data(), suffix.data() + suffix.size(), port);
+        if (error != std::errc{} || end != suffix.data() + suffix.size() || port == 0 || port > 65535)
+            throw std::invalid_argument("Relay endpoint port must be between 1 and 65535");
+    }
+    return make_room_session(std::move(address), static_cast<std::uint16_t>(port));
 }
 
 }

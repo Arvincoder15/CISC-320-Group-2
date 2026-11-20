@@ -70,8 +70,19 @@ struct Pair {
 };
 
 void check_relay(const std::array<PlayableLevelDefinition, 3>& campaign) {
+    for (const char* invalid : {"", "https://relay.example", ":7777", "relay.example:",
+                               "relay.example:0", "relay.example:65536", "relay.example:7777x"}) {
+        bool rejected = false;
+        try {
+            (void)engine::net::make_room_session(invalid);
+        } catch (const std::invalid_argument&) {
+            rejected = true;
+        }
+        CHECK(rejected);
+    }
     engine::net::RoomRelay relay(0);
-    const auto session = [&] { return engine::net::make_room_session("127.0.0.1", relay.port()); };
+    const auto endpoint = "127.0.0.1:" + std::to_string(relay.port());
+    const auto session = [&] { return engine::net::make_room_session(endpoint); };
     DemoLevel host_level(campaign[0]), join_level(campaign[0]);
     std::size_t host_index = 0, join_index = 0;
     OnlinePlay host(host_level, campaign, host_index, session());

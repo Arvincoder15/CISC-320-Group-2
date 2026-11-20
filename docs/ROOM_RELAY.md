@@ -31,6 +31,31 @@ The `ui_room_relay` check uses real ENet sockets on a local ephemeral port.
 It covers room creation, joining, both players' movement, a third player
 being rejected, disconnect, and retry.
 
+## Play across different networks using Playit
+
+1. Run `./build-ui/engine-build/room_relay 7777` on the host Mac.
+2. Install and link the [Playit agent](https://playit.gg/download/macos) on that
+   Mac. Create a UDP tunnel that targets local address `127.0.0.1` and port
+   `7777`. Keep the relay and agent running during the match.
+3. Copy the tunnel's assigned public address **including its UDP port**. Both
+   players must run this branch and connect to the same relay. The host can use
+   the local endpoint while the friend uses the following command with the
+   assigned public endpoint substituted:
+
+   ```sh
+   ELEMENTAL_COOP_RELAY=your-tunnel-hostname:12345 ./build-ui/ui_prototype
+   ```
+
+   In Windows PowerShell, set
+   `$env:ELEMENTAL_COOP_RELAY = "your-tunnel-hostname:12345"` and launch the
+   game executable. The friend only needs the game.
+4. On the Mac, create a room and send your friend the code. They choose
+   **Join Room**, enter the code, and you click **Start Game**.
+
+For a shared build, set
+`-DGROUP2_RELAY_ADDRESS=your-tunnel-hostname:12345` at configure time. The
+port defaults to 7777 when omitted.
+
 ## Deploy for two different networks
 
 Use a Linux VM with systemd, a public IPv4 address, and inbound UDP support.
