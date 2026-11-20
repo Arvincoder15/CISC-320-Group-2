@@ -1,10 +1,30 @@
 #include "engine/networking.hpp"
 #include "test_support.hpp"
-#include <enet/enet.h>
+#include <algorithm>
+#include <chrono>
 #include <limits>
+#include <thread>
 using namespace engine::net;
+using namespace std::chrono_literals;
 
 namespace {
+struct Probe { Session& session; std::vector<Event> events; };
+// Polls every probe until done() or the deadline, so a broken connection fails the test instead of hanging it.
+template <class Done>
+bool pump(std::initializer_list<Probe*> probes, Done done, std::chrono::milliseconds limit = 2000ms) {
+    const auto deadline = std::chrono::steady_clock::now() + limit;
+    while (std::chrono::steady_clock::now() < deadline) {
+        for (auto* probe : probes)
+            for (auto& event : probe->session.poll()) probe->events.push_back(std::move(event));
+        if (done()) return true;
+        std::this_thread::sleep_for(5ms);
+    }
+    return false;
+}
+std::size_t count(const Probe& probe, Event::Kind kind) {
+    return static_cast<std::size_t>(std::count_if(probe.events.begin(), probe.events.end(),
+        [kind](const Event& event) { return event.kind == kind; }));
+}
 std::vector<std::byte> bytes_of(std::initializer_list<int> values) {
     std::vector<std::byte> out;
     for (const int v : values) out.push_back(static_cast<std::byte>(v));
@@ -101,13 +121,41 @@ int main() { return run_test([] {
         CHECK(late.size() == 2 && late[0].payload == bytes_of({1}) && late[1].payload == bytes_of({2}));
     }
 
-    // shortcut: ENet smoke test only proves ENet builds and links; replaced by Session tests in NET-04.
-    CHECK(enet_initialize() == 0);
-    ENetAddress address{};
-    address.host = ENET_HOST_ANY;
-    address.port = 0; // OS picks a free port
-    ENetHost* enet_host = enet_host_create(&address, 1, 2, 0, 0);
-    CHECK(enet_host != nullptr && enet_host->address.port != 0);
-    enet_host_destroy(enet_host);
-    enet_deinitialize();
+    {   // Real ENet over localhost.
+        auto host = make_enet_session();
+        auto client = make_enet_session();
+        CHECK(host->host(0) && host->state() == SessionState::hosting);
+        const auto port = host->port();
+        CHECK(port != 0);
+        CHECK(client->join("127.0.0.1", port) && client->state() == SessionState::connecting);
+        Probe h{*host, {}}, c{*client, {}};
+        CHECK(pump({&h, &c}, [&] {
+            return host->state() == SessionState::connected && client->state() == SessionState::connected;
+        }));
+
+        const auto hello = bytes_of({1, 2, 3});
+        const auto tick = bytes_of({4, 5});
+        CHECK(client->send(Channel::reliable, hello));
+        CHECK(host->send(Channel::unreliable, tick));
+        CHECK(pump({&h, &c}, [&] { return count(h, Event::Kind::message) == 1 && count(c, Event::Kind::message) == 1; }));
+        CHECK(h.events.back().payload == hello && c.events.back().payload == tick);
+
+        // The session holds exactly one peer: a second joiner never gets in.
+        auto third = make_enet_session();
+        CHECK(third->join("127.0.0.1", port));
+        Probe t{*third, {}};
+        CHECK(!pump({&h, &c, &t}, [&] { return third->state() == SessionState::connected; }, 300ms));
+        CHECK(count(h, Event::Kind::connected) == 1);
+        third->close();
+
+        client->close();
+        CHECK(client->state() == SessionState::idle && !client->send(Channel::reliable, hello));
+        CHECK(pump({&h}, [&] { return host->state() == SessionState::disconnected; }));
+        CHECK(count(h, Event::Kind::disconnected) == 1);
+    }
+    {   // An address that cannot be resolved fails immediately with a message.
+        auto bad = make_enet_session();
+        CHECK(!bad->join("invalid..host", 7777));
+        CHECK(bad->state() == SessionState::failed && !bad->last_error().empty());
+    }
 }); }

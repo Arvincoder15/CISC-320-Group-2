@@ -30,6 +30,8 @@ public:
     virtual std::uint16_t port() const = 0;                             // port being hosted, 0 otherwise
     virtual void close() = 0;
 };
+// Real UDP connection via ENet (ADR NET-2). Port 0 in host() lets the OS pick; read it back with port().
+std::unique_ptr<Session> make_enet_session();
 // In-memory pair for tests. delay_polls: each event reaches the receiver on its (delay_polls + 1)-th poll.
 // drop_percent applies to the unreliable channel only. Same seed -> same drops on every platform.
 struct LinkConditions { int delay_polls{0}; int drop_percent{0}; unsigned seed{1}; };

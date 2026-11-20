@@ -43,6 +43,7 @@ target_include_directories(engine_tools SYSTEM PRIVATE third_party/nlohmann_json
 
 target_sources(engine_infrastructure PRIVATE engine/src/resource_files.cpp engine/src/configuration.cpp)
 target_include_directories(engine_infrastructure SYSTEM PRIVATE third_party/nlohmann_json/include)
+target_sources(engine_networking PRIVATE engine/src/enet_session.cpp)
 target_link_libraries(engine_networking PRIVATE enet)
 
 add_library(elemental_coop_game STATIC games/elemental_coop/src/game.cpp)
@@ -71,7 +72,6 @@ if(BUILD_TESTING)
         group2_target(test_${suite})
         add_test(NAME ${suite} COMMAND test_${suite})
     endforeach()
-    target_link_libraries(test_net_session PRIVATE enet) # smoke test calls ENet directly
 endif()
 
 # Optional backend: the default headless build remains dependency-free.
