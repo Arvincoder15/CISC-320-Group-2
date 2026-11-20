@@ -76,10 +76,11 @@ int run_network(engine::net::Session& session, bool started) {
     const bool hosting = session.state() == SessionState::hosting;
     if (hosting) logger.write(engine::LogLevel::info, "Hosting on port " + std::to_string(session.port()) + "; waiting for a player");
     elemental_coop::Game game;
+    elemental_coop::GameNetLevel level(game);
     // Exactly one driver per session: both would poll it and steal each other's events.
     std::optional<elemental_coop::CoopHost> host;
     std::optional<elemental_coop::CoopClient> client;
-    if (hosting) host.emplace(game, session);
+    if (hosting) host.emplace(level, session);
     else client.emplace(session);
     bool was_connected = false;
     auto next_frame = std::chrono::steady_clock::now();

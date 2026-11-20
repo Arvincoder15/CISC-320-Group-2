@@ -17,35 +17,57 @@ std::vector<std::byte> with_byte(std::vector<std::byte> bytes, std::size_t index
     bytes.at(index) = static_cast<std::byte>(value);
     return bytes;
 }
+// Minimal level for driver tests that only count what the host asks of it.
+struct CountingLevel final : NetLevel {
+    int ticks = 0, interacts = 0;
+    void tick(const PlayerInputs&, float) override { ++ticks; }
+    void interact() override { ++interacts; }
+    void restart() override {}
+    NetSnapshot snapshot(std::uint32_t tick) const override { return NetSnapshot{.tick = tick}; }
+};
 }
 
 int main() { return run_test([] {
     // Every message survives encode/decode unchanged.
-    const NetSnapshot snapshot{77, RoundState::won,
-        {NetPlayer{1.5F, -2, 3, 4, true, false, true}, NetPlayer{5, 6, -7, 8.25F, false, true, false}}};
+    const NetSnapshot snapshot{.tick = 77, .round = RoundState::won, .level = 2,
+        .players = {NetPlayer{1.5F, -2, 3, 4, true, false, true, true}, NetPlayer{5, 6, -7, 8.25F, false, true, false, false}},
+        .gates = {NetGate{true, false, false}, NetGate{true, true, true}},
+        .enemies = {NetEnemy{100, 200.5F, true, 1.25F}}};
+    const NetSnapshot empty_lists{.tick = 1};
     for (const Message& message : {Message{Hello{}}, Message{Welcome{}}, Message{Reject{}},
-             Message{NetInput{42, -0.5F, 3}}, Message{snapshot}, Message{Control{ControlKind::restart}}}) {
+             Message{NetInput{42, -0.5F, 3, 7}}, Message{snapshot}, Message{empty_lists},
+             Message{Control{ControlKind::restart}}}) {
         const auto decoded = decode(encode(message));
         CHECK(decoded && *decoded == message);
     }
-    CHECK(encode(snapshot).size() == 41 && encode(NetInput{}).size() == 11);
+    CHECK(encode(empty_lists).size() == 44 && encode(snapshot).size() == 59 && encode(NetInput{}).size() == 12);
 
-    // Malformed packets are rejected without throwing.
+    // Malformed packets are rejected without throwing. Snapshot layout: [6] round, [24] fire flags,
+    // [42] gate count, [43..44] gate flags, [45] enemy count.
     const auto input = encode(NetInput{1, 0.5F, 0});
     auto longer = input;
     longer.push_back(std::byte{0});
     auto nan_input = encode(NetInput{1, std::numeric_limits<float>::quiet_NaN(), 0});
-    for (const auto& bad : {raw({}), raw({1}), with_byte(encode(Hello{}), 0, 2), raw({1, 99}), longer,
-             std::vector<std::byte>(input.begin(), input.end() - 1), nan_input, encode(NetInput{1, 2.0F, 0}),
-             with_byte(encode(snapshot), 6, 9), with_byte(encode(snapshot), 23, 8),
+    auto encoded = encode(snapshot);
+    auto snapshot_too_long = encoded;
+    snapshot_too_long.push_back(std::byte{0});
+    const std::vector<std::byte> snapshot_truncated(encoded.begin(), encoded.end() - 1);
+    NetSnapshot too_many_gates{.tick = 1};
+    too_many_gates.gates.resize(max_gates + 1);
+    for (const auto& bad : {raw({}), raw({1}), with_byte(encode(Hello{}), 0, 1), with_byte(encode(Hello{}), 0, 3),
+             raw({2, 99}), longer, std::vector<std::byte>(input.begin(), input.end() - 1), nan_input,
+             encode(NetInput{1, 2.0F, 0}), with_byte(encoded, 6, 9), with_byte(encoded, 24, 16),
+             with_byte(encoded, 43, 8), with_byte(encoded, 42, 3), with_byte(encoded, 45, 2),
+             snapshot_too_long, snapshot_truncated, encode(too_many_gates),
              with_byte(encode(Control{ControlKind::pause}), 2, 0)})
         CHECK(!decode(bad));
 
     // Host and client over the in-memory pair.
     Game game;
+    GameNetLevel level(game);
     auto [host_session, client_session] = engine::net::make_loopback_pair();
     CHECK(host_session->host(7777) && client_session->join("loopback", 7777));
-    CoopHost host(game, *host_session);
+    CoopHost host(level, *host_session);
     CoopClient client(*client_session);
     const auto step = [&](int times, InputFrame host_input, InputFrame client_input) {
         for (int i = 0; i < times; ++i) {
@@ -102,11 +124,12 @@ int main() { return run_test([] {
 
     {   // A Hello with the wrong protocol version is answered with Reject.
         Game other;
+        GameNetLevel other_level(other);
         auto [hs, cs] = engine::net::make_loopback_pair();
         CHECK(hs->host(1) && cs->join("loopback", 1));
-        CoopHost other_host(other, *hs);
+        CoopHost other_host(other_level, *hs);
         cs->poll();
-        CHECK(cs->send(Channel::reliable, with_byte(encode(Hello{}), 0, 2)));
+        CHECK(cs->send(Channel::reliable, with_byte(encode(Hello{}), 0, 1))); // a version-1 joiner
         other_host.update({}, 1.0F / 60.0F);
         CHECK(!other_host.client_ready());
         const auto reply = cs->poll();
@@ -115,11 +138,43 @@ int main() { return run_test([] {
         CHECK(decoded && std::holds_alternative<Reject>(*decoded));
     }
 
-    {   // Lost jump: the packet carrying the press never arrives; the next one still jumps exactly once.
-        Game other;
+    {   // Lost interact (lever key): the packet carrying the press is lost; the next one still interacts once.
+        CountingLevel counting;
         auto [hs, cs] = engine::net::make_loopback_pair();
         CHECK(hs->host(1) && cs->join("loopback", 1));
-        CoopHost other_host(other, *hs);
+        CoopHost counting_host(counting, *hs);
+        cs->poll();
+        CHECK(cs->send(Channel::reliable, encode(Hello{})));
+        counting_host.update({}, 1.0F / 60.0F);
+        // NetInput{10, 0, 0, 1} carried the press and was lost, so it is simply never sent.
+        for (std::uint32_t t = 11; t < 20; ++t) {
+            CHECK(cs->send(Channel::unreliable, encode(NetInput{t, 0, 0, 1})));
+            counting_host.update({}, 1.0F / 60.0F);
+        }
+        CHECK(counting.interacts == 1);
+        CHECK(cs->send(Channel::unreliable, encode(NetInput{20, 0, 0, 2})));
+        counting_host.update({}, 1.0F / 60.0F);
+        CHECK(counting.interacts == 2 && counting.ticks == 11); // ticks once per update after the Hello
+
+        // Through CoopClient: an interact press is counted once per press.
+        auto [hs2, cs2] = engine::net::make_loopback_pair();
+        CHECK(hs2->host(1) && cs2->join("loopback", 1));
+        CountingLevel second;
+        CoopHost second_host(second, *hs2);
+        CoopClient presser(*cs2);
+        for (int i = 0; i < 3; ++i) { presser.update({}); second_host.update({}, 1.0F / 60.0F); }
+        presser.update({}, true);
+        second_host.update({}, 1.0F / 60.0F);
+        for (int i = 0; i < 5; ++i) { presser.update({}); second_host.update({}, 1.0F / 60.0F); }
+        CHECK(second.interacts == 1);
+    }
+
+    {   // Lost jump: the packet carrying the press never arrives; the next one still jumps exactly once.
+        Game other;
+        GameNetLevel other_level(other);
+        auto [hs, cs] = engine::net::make_loopback_pair();
+        CHECK(hs->host(1) && cs->join("loopback", 1));
+        CoopHost other_host(other_level, *hs);
         cs->poll();
         CHECK(cs->send(Channel::reliable, encode(Hello{})));
         other_host.update({}, 1.0F / 60.0F);
@@ -139,6 +194,7 @@ int main() { return run_test([] {
     const engine::net::LinkConditions bad_link{6, 5, 42};
     struct Session2 {
         Game game;
+        GameNetLevel level{game};
         std::unique_ptr<engine::net::Session> host_session, client_session;
         std::optional<CoopHost> host;
         std::optional<CoopClient> client;
@@ -146,7 +202,7 @@ int main() { return run_test([] {
         explicit Session2(engine::net::LinkConditions link) {
             std::tie(host_session, client_session) = engine::net::make_loopback_pair(link);
             CHECK(host_session->host(1) && client_session->join("loopback", 1));
-            host.emplace(game, *host_session);
+            host.emplace(level, *host_session);
             client.emplace(*client_session);
         }
         void step(InputFrame host_input = {}, InputFrame client_input = {}) {
@@ -187,6 +243,7 @@ int main() { return run_test([] {
     {   // Reconnecting with the same client: a paused host announces the pause, and a new host's low ticks
         // are accepted instead of being treated as stale.
         Game first_game, second_game;
+        GameNetLevel first_level(first_game), second_level(second_game);
         auto [hs, cs] = engine::net::make_loopback_pair();
         CoopClient joiner(*cs);
         const auto play = [&](CoopHost& h, int times) {
@@ -196,7 +253,7 @@ int main() { return run_test([] {
             }
         };
         CHECK(hs->host(1) && cs->join("loopback", 1));
-        CoopHost first(first_game, *hs);
+        CoopHost first(first_level, *hs);
         play(first, 200);
         first.request(ControlKind::pause);
         cs->close();
@@ -209,7 +266,7 @@ int main() { return run_test([] {
         cs->close();
         hs->close(); // the host program restarts: new game, ticks start again from zero
         CHECK(hs->host(1) && cs->join("loopback", 1));
-        CoopHost second(second_game, *hs);
+        CoopHost second(second_level, *hs);
         play(second, 6);
         CHECK(joiner.ready() && !joiner.paused());
         CHECK(joiner.latest() && joiner.latest()->tick < 10 && *joiner.latest() == snapshot_of(second_game, joiner.latest()->tick));

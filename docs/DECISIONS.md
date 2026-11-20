@@ -61,7 +61,7 @@ Date: 2026-11-04
 Owner / reviewers: Henry / Blake
 Context and problem: Messages must be explicit bytes, never raw struct memory, and invalid input from the network must never crash the game or change its state.
 Decision and rationale:
-- Every message starts with a protocol version byte (`1`) and a type byte. Integers and floats are little-endian; floats are IEEE-754 32-bit. Every message type has one exact size; any other size is rejected.
+- Every message starts with a protocol version byte (`2`; version 1 lacked gates, enemies and lever input) and a type byte. Integers and floats are little-endian; floats are IEEE-754 32-bit. Fixed messages have one exact size; snapshot lists carry a count byte with an upper limit. Any other size is rejected.
 - Channel 0 is reliable and ordered (control). Channel 1 is unreliable and sequenced (input and snapshots), so a late packet is dropped rather than delaying newer ones.
 
 | Type | Direction / channel | Fields |
@@ -69,14 +69,15 @@ Decision and rationale:
 | Hello | client → host, reliable | none |
 | Welcome | host → client, reliable | slot u8 (always 1) |
 | Reject | host → client, reliable | reason u8 (version mismatch, session full) |
-| Input | client → host, unreliable | tick u32, move_x f32 in [-1, 1], jump_count u8 |
-| Snapshot | host → client, unreliable | tick u32, round_state u8, then for each player: x, y, vx, vy f32 and flags u8 (grounded, alive, at_exit) |
+| Input | client → host, unreliable | tick u32, move_x f32 in [-1, 1], jump_count u8, interact_count u8 |
+| Snapshot | host → client, unreliable | tick u32, round_state u8, level u8; for each player: x, y, vx, vy f32 and flags u8 (grounded, alive, at_exit, facing_left); gate count u8 (≤ 8) and per gate flags u8 (lever_on, plate_occupied, open); enemy count u8 (≤ 16) and per enemy x, y, animation_time f32 and flags u8 (facing_left) |
 | Control | either way, reliable | kind u8: pause, resume, restart, quit |
 
 - Jumps travel as a counter (`jump_count`) that increases on each press. A lost Input packet loses no jump, because the next packet carries the new count. The host fires one jump each time the count changes.
 - Validation at the host: the sender's slot comes from the connection, never from the packet; input with a tick at or below the last accepted tick is dropped; non-finite or out-of-range values are rejected. The client drops snapshots older than the newest one it has.
-- Simulation runs at 60 ticks per second with one snapshot per tick (under 50 bytes each).
-- Puzzle objects (plates, doors) are not in the snapshot yet because `Game` does not have them. They are added, identified by their index in the level file, when Blake adds them. `EntityId` values are never sent.
+- Lever presses travel as a second counter (`interact_count`) with the same rule as jumps.
+- The host sends one snapshot per frame: 44 bytes with no gates or enemies, at most 260 bytes at the limits (the hardest campaign level, 2 gates and 5 acid enemies, is 111 bytes).
+- Gates and enemies are identified by their order in the level file, and the level by its campaign index, so both machines agree without sending `EntityId` values.
 
 API, ownership and dependency consequences: Message encoding lives in the game layer (`games/elemental_coop`); byte reading and writing helpers live in `engine_networking`. Arvin's planned reusable serializer (FR-INF-08) may later absorb those helpers.
 Tests / migration required: round trip of every message type; rejection of wrong version, type, length, NaN and out-of-range axis; stale and wrong-slot input ignored; lost-jump test.
