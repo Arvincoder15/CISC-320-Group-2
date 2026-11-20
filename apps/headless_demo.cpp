@@ -5,8 +5,11 @@
 #include "elemental_coop/game.hpp"
 #include <array>
 #include <charconv>
+#include "elemental_coop/net.hpp"
 #include <chrono>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <string_view>
 #include <thread>
 namespace {
@@ -52,7 +55,15 @@ int run_local_demo() {
     return 0;
 }
 
-// Two-process connection check (NET-05): logs session state changes until the connection ends.
+std::string describe(const elemental_coop::NetSnapshot& s) {
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(1) << "tick " << s.tick << " | fire (" << s.players[0].x << ", "
+        << s.players[0].y << ") | water (" << s.players[1].x << ", " << s.players[1].y << ")";
+    return out.str();
+}
+
+// Networked co-op without graphics (NET-05/06): 60 Hz loop, scripted input, positions printed once per second.
+// The host ends the session after 5 s of play, which the joiner reports as a lost connection.
 int run_network(engine::net::Session& session, bool started) {
     using engine::net::SessionState;
     std::cout << std::unitbuf; // flush each line so logs survive a killed process or a pipe
@@ -61,21 +72,38 @@ int run_network(engine::net::Session& session, bool started) {
         logger.write(engine::LogLevel::error, session.last_error());
         return 5;
     }
-    if (session.state() == SessionState::hosting)
-        logger.write(engine::LogLevel::info, "Hosting on port " + std::to_string(session.port()) + "; waiting for a player");
+    const bool hosting = session.state() == SessionState::hosting;
+    if (hosting) logger.write(engine::LogLevel::info, "Hosting on port " + std::to_string(session.port()) + "; waiting for a player");
+    elemental_coop::Game game;
+    elemental_coop::CoopHost host(game, session); // only the matching driver is updated below
+    elemental_coop::CoopClient client(session);
     bool was_connected = false;
-    for (;;) {
-        session.poll();
+    auto next_frame = std::chrono::steady_clock::now();
+    for (std::uint32_t frame = 0;; ++frame) {
+        const float direction = (frame / 60) % 2 == 0 ? 1.0F : -1.0F; // scripted: change direction every second
+        if (hosting) host.update(engine::InputFrame{direction, false, false}, 1.0F / 60.0F);
+        else client.update(engine::InputFrame{-direction, frame % 60 == 0, false});
+
         const auto state = session.state();
         if (state == SessionState::connected && !was_connected) {
             logger.write(engine::LogLevel::info, "Connected");
             was_connected = true;
         }
         if (state == SessionState::failed || state == SessionState::disconnected) {
-            logger.write(engine::LogLevel::warning, session.last_error());
+            logger.write(engine::LogLevel::warning, client.rejected() ? "Rejected by host: different version" : session.last_error());
             return was_connected ? 0 : 5;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        if (frame % 60 == 0) {
+            if (hosting && host.client_ready()) logger.write(engine::LogLevel::info, describe(elemental_coop::snapshot_of(game, host.tick())));
+            if (!hosting && client.latest()) logger.write(engine::LogLevel::info, describe(*client.latest()));
+        }
+        if (hosting && host.tick() >= 300) {
+            logger.write(engine::LogLevel::info, "Played 5 s; closing the session");
+            session.close();
+            return 0;
+        }
+        next_frame += std::chrono::microseconds(16667);
+        std::this_thread::sleep_until(next_frame);
     }
 }
 

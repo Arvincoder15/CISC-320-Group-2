@@ -51,8 +51,12 @@ target_include_directories(elemental_coop_game PUBLIC games/elemental_coop/inclu
 target_link_libraries(elemental_coop_game PUBLIC engine_architecture engine_physics engine_interaction)
 group2_target(elemental_coop_game)
 
+add_library(elemental_coop_net STATIC games/elemental_coop/src/net.cpp)
+target_link_libraries(elemental_coop_net PUBLIC elemental_coop_game engine_networking)
+group2_target(elemental_coop_net)
+
 add_executable(engine_demo apps/headless_demo.cpp)
-target_link_libraries(engine_demo PRIVATE elemental_coop_game engine_rendering engine_networking engine_ai engine_tools engine_infrastructure)
+target_link_libraries(engine_demo PRIVATE elemental_coop_net elemental_coop_game engine_rendering engine_networking engine_ai engine_tools engine_infrastructure)
 group2_target(engine_demo)
 
 add_executable(infrastructure_demo apps/infrastructure_demo.cpp)
@@ -65,10 +69,10 @@ group2_target(ai_demo)
 
 if(BUILD_TESTING)
     configure_file(tests/fixtures/tiled_level.json fixtures/tiled_level.json COPYONLY)
-    foreach(suite IN ITEMS architecture rendering physics networking ai tools interaction infrastructure resource_files configuration gameplay integration net_session)
+    foreach(suite IN ITEMS architecture rendering physics networking ai tools interaction infrastructure resource_files configuration gameplay integration net_session coop_net)
         add_executable(test_${suite} tests/${suite}_test.cpp)
         target_include_directories(test_${suite} PRIVATE tests)
-        target_link_libraries(test_${suite} PRIVATE elemental_coop_game engine_rendering engine_networking engine_ai engine_tools engine_infrastructure)
+        target_link_libraries(test_${suite} PRIVATE elemental_coop_net elemental_coop_game engine_rendering engine_networking engine_ai engine_tools engine_infrastructure)
         group2_target(test_${suite})
         add_test(NAME ${suite} COMMAND test_${suite})
     endforeach()
