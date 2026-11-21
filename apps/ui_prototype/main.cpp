@@ -97,7 +97,10 @@ public:
         SDL_SetRenderVSync(r, 1);
         if (!SDL_SetWindowFullscreen(w, settings_.window.fullscreen)) notice_ = "Fullscreen unavailable.";
         load_font();
-        if (SDL_WasInit(SDL_INIT_AUDIO)) audio_.open(assets_);
+        if (SDL_WasInit(SDL_INIT_AUDIO)) {
+            audio_.open(assets_);
+            audio_.apply(settings_.audio);
+        }
         world_renderer_=std::make_unique<engine::SdlRenderer>(r,engine::Vec2{width,height});
         const auto render_assets=asset_directory().parent_path()/"rendering-assets";
         world_renderer_->load_texture("characters",render_assets/"characters.bmp");
@@ -130,12 +133,17 @@ public:
         const auto check = [](bool ok, const char* message) { if (!ok) throw std::runtime_error(message); };
         check(audio_.device() && SDL_PauseAudioDevice(audio_.device()), "Audio output available for smoke test");
         // With output paused the mixer can't drain the queues between a real input event and its assertion.
-        const auto asset_count = 1 + static_cast<std::size_t>(Cue::count);
-        check(assets_.size() == asset_count, "Startup cached the font and seven WAV files");
+        const auto asset_count = 2 + static_cast<std::size_t>(Cue::count);
+        check(assets_.size() == asset_count, "Startup cached the font, music and sound effects");
+        check(audio_.music_queued() > 0, "Background music starts in the main menu");
+        audio_.apply({0.0F, true});
+        check(audio_.music_queued() == 0, "Zero master volume clears background music");
+        audio_.apply(settings_.audio);
         check(assets_.load("font.bmp") == assets_.load("./font.bmp") && assets_.size() == asset_count,
               "Font requests reuse the cached atlas");
         draw(); click(640, 245); check(screen_ == Screen::play, "Local Play navigation");
-        check(audio_.queued(Cue::select) > 0, "Local Play queues a menu sound");
+        check(audio_.queued(Cue::select) > 0 && audio_.music_queued() > 0,
+              "Menu sound and background music can play together");
         key(SDL_SCANCODE_D, true); key(SDL_SCANCODE_RIGHT, true);
         update(0.05F); check(position(0).x > 150 && position(1).x > 1130, "Independent keyboard movement");
         draw();
@@ -176,6 +184,7 @@ public:
               "Preview uses the draft without saving it");
         draft_.audio.master_volume = 0.3F; draft_.audio.sound_effects = false;
         apply_settings();
+        check(audio_.music_queued() > 0, "Disabling sound effects leaves background music playing");
         const auto loaded = engine::load_user_settings(path_);
         check(loaded.status == engine::SettingsLoadStatus::loaded && loaded.settings.audio.master_volume == 0.3F,
               "Settings persistence");
@@ -1001,6 +1010,7 @@ private:
         return screen_==Screen::play;
     }
     void update(float dt) {
+        audio_.update_music();
         elapsed_+=dt;
         if(online_.active() && !update_online(dt)) return;
         if(screen_!=Screen::play || dt<=0) return;

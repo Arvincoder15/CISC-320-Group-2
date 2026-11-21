@@ -30,6 +30,33 @@ class SoundBank {
     static_assert(names.size() == static_cast<std::size_t>(Cue::count));
     std::array<Voice, names.size()> voices_{};
 
+    Voice music_;
+    bool music_enabled_{};
+
+    Voice load(engine::FileResourceManager& files, const std::string& name) {
+        try {
+            const auto asset = files.load(name);
+            SDL_AudioSpec format{};
+            Uint8* pcm = nullptr;
+            Uint32 size = 0;
+            auto* io = SDL_IOFromConstMem(asset->bytes.data(), asset->bytes.size());
+            if (!io || !SDL_LoadWAV_IO(io, true, &format, &pcm, &size))
+                throw std::runtime_error(SDL_GetError());
+            Voice voice;
+            voice.pcm.reset(pcm);
+            if (!size || size > static_cast<Uint32>(std::numeric_limits<int>::max()))
+                throw std::runtime_error("empty or oversized recording");
+            voice.size = static_cast<int>(size);
+            voice.stream.reset(SDL_CreateAudioStream(&format, &format));
+            if (!voice.stream || !SDL_BindAudioStream(device_.id, voice.stream.get()))
+                throw std::runtime_error(SDL_GetError());
+            return voice;
+        } catch (const std::exception& e) {
+            std::cerr << "Sound unavailable (" << name << "): " << e.what() << '\n';
+            return {};
+        }
+    }
+
 public:
     void open(engine::FileResourceManager& files) {
         device_.id = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, nullptr);
@@ -37,28 +64,24 @@ public:
             std::cerr << "Sound output unavailable: " << SDL_GetError() << '\n';
             return;
         }
-        for (std::size_t i = 0; i < names.size(); ++i) {
-            const std::string name = std::string("audio/") + names[i] + ".wav";
-            try {
-                const auto asset = files.load(name);
-                SDL_AudioSpec format{};
-                Uint8* pcm = nullptr;
-                Uint32 size = 0;
-                auto* io = SDL_IOFromConstMem(asset->bytes.data(), asset->bytes.size());
-                if (!io || !SDL_LoadWAV_IO(io, true, &format, &pcm, &size))
-                    throw std::runtime_error(SDL_GetError());
-                Voice voice;
-                voice.pcm.reset(pcm);
-                if (!size || size > static_cast<Uint32>(std::numeric_limits<int>::max()))
-                    throw std::runtime_error("empty or oversized recording");
-                voice.size = static_cast<int>(size);
-                voice.stream.reset(SDL_CreateAudioStream(&format, &format));
-                if (!voice.stream || !SDL_BindAudioStream(device_.id, voice.stream.get()))
-                    throw std::runtime_error(SDL_GetError());
-                voices_[i] = std::move(voice);
-            } catch (const std::exception& e) {
-                std::cerr << "Sound unavailable (" << name << "): " << e.what() << '\n';
-            }
+        for (std::size_t i = 0; i < names.size(); ++i)
+            voices_[i] = load(files, std::string("audio/") + names[i] + ".wav");
+        music_ = load(files, "audio/background.wav");
+    }
+
+    int music_queued() const {
+        return music_.stream ? SDL_GetAudioStreamQueued(music_.stream.get()) : 0;
+    }
+
+    void update_music() {
+        if (!music_.stream || !music_enabled_) return;
+        const int queued = music_queued();
+        // Append the next loop early. Flushing between loops would end resampling
+        // at each boundary and can create an audible seam.
+        if (queued >= 0 && queued <= music_.size / 4 &&
+            !SDL_PutAudioStreamData(music_.stream.get(), music_.pcm.get(), music_.size)) {
+            std::cerr << "Background music unavailable: " << SDL_GetError() << '\n';
+            music_enabled_ = false;
         }
     }
 
@@ -69,6 +92,13 @@ public:
         return voice.stream ? SDL_GetAudioStreamQueued(voice.stream.get()) : 0;
     }
     void apply(const engine::AudioSettings& settings) {
+        if (music_.stream) {
+            const float music_gain = 0.55F * settings.master_volume;
+            SDL_SetAudioStreamGain(music_.stream.get(), music_gain);
+            music_enabled_ = music_gain > 0.0F;
+            if (!music_enabled_) SDL_ClearAudioStream(music_.stream.get());
+            update_music();
+        }
         const float gain = settings.sound_effects ? settings.master_volume : 0.0F;
         for (auto& voice : voices_) if (voice.stream) {
             SDL_SetAudioStreamGain(voice.stream.get(), gain);
