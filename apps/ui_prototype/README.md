@@ -57,6 +57,10 @@ See [Remote multiplayer](../../docs/ROOM_RELAY.md) for room codes, a two-window 
   plays Water's jump using the settings on screen before Apply. Zero volume or
   switching effects off silences playback. A missing clip leaves the game playable
   and prints the affected file name. No extra audio library is needed.
+- An original background track loops through the menus and gameplay on a separate
+  SDL stream. Master volume controls both the music and effects. The effects
+  toggle mutes only the cues. Regenerate the music with
+  `python3 apps/ui_prototype/tools/make_music.py` from the repo root.
 - Startup loads settings using `load_user_settings`. Invalid files are preserved,
   defaults are used, and the terminal/UI reports the failure.
 - Apply uses `save_engine_settings` and creates the parent directory first.

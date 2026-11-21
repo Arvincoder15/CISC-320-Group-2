@@ -36,6 +36,7 @@ constexpr SDL_Color muted{151, 186, 214, 255}, orange{255, 132, 35, 255};
 constexpr SDL_Color cyan{37, 195, 237, 255}, green{90, 220, 139, 255};
 enum class Screen { menu, lobby, play, pause, settings, lost, won, tools };
 struct Button { SDL_FRect rect; std::string label; int id; bool enabled{true}; };
+constexpr SDL_FRect music_button{1202, 680, 54, 34};
 struct GameplayCamera {
     float scale{1.0F};
     float offset_x{};
@@ -97,7 +98,10 @@ public:
         SDL_SetRenderVSync(r, 1);
         if (!SDL_SetWindowFullscreen(w, settings_.window.fullscreen)) notice_ = "Fullscreen unavailable.";
         load_font();
-        if (SDL_WasInit(SDL_INIT_AUDIO)) audio_.open(assets_);
+        if (SDL_WasInit(SDL_INIT_AUDIO)) {
+            audio_.open(assets_);
+            audio_.apply(settings_.audio);
+        }
         world_renderer_=std::make_unique<engine::SdlRenderer>(r,engine::Vec2{width,height});
         const auto render_assets=asset_directory().parent_path()/"rendering-assets";
         world_renderer_->load_texture("characters",render_assets/"characters.bmp");
@@ -130,12 +134,25 @@ public:
         const auto check = [](bool ok, const char* message) { if (!ok) throw std::runtime_error(message); };
         check(audio_.device() && SDL_PauseAudioDevice(audio_.device()), "Audio output available for smoke test");
         // With output paused the mixer can't drain the queues between a real input event and its assertion.
-        const auto asset_count = 1 + static_cast<std::size_t>(Cue::count);
-        check(assets_.size() == asset_count, "Startup cached the font and seven WAV files");
+        const auto asset_count = 2 + static_cast<std::size_t>(Cue::count);
+        check(assets_.size() == asset_count, "Startup cached the font, music and sound effects");
+        check(audio_.music_queued() > 0, "Background music starts in the main menu");
+        audio_.apply({0.0F, true});
+        check(audio_.music_queued() == 0, "Zero master volume clears background music");
+        audio_.apply(settings_.audio);
         check(assets_.load("font.bmp") == assets_.load("./font.bmp") && assets_.size() == asset_count,
               "Font requests reuse the cached atlas");
         draw(); click(640, 245); check(screen_ == Screen::play, "Local Play navigation");
-        check(audio_.queued(Cue::select) > 0, "Local Play queues a menu sound");
+        check(audio_.queued(Cue::select) > 0 && audio_.music_queued() > 0,
+              "Menu sound and background music can play together");
+        draw(); click(music_button.x + 27, music_button.y + 17);
+        check(audio_.music_muted() && audio_.music_queued() == 0 && audio_.queued(Cue::select) > 0,
+              "Corner toggle mutes music and keeps sound effects");
+        audio_.apply(settings_.audio);
+        check(audio_.music_queued() == 0, "Applying volume preserves the music mute");
+        key(SDL_SCANCODE_M, true);
+        check(!audio_.music_muted() && audio_.music_queued() > 0, "Keyboard toggle restores music");
+        key(SDL_SCANCODE_M, false);
         key(SDL_SCANCODE_D, true); key(SDL_SCANCODE_RIGHT, true);
         update(0.05F); check(position(0).x > 150 && position(1).x > 1130, "Independent keyboard movement");
         draw();
@@ -176,6 +193,7 @@ public:
               "Preview uses the draft without saving it");
         draft_.audio.master_volume = 0.3F; draft_.audio.sound_effects = false;
         apply_settings();
+        check(audio_.music_queued() > 0, "Disabling sound effects leaves background music playing");
         const auto loaded = engine::load_user_settings(path_);
         check(loaded.status == engine::SettingsLoadStatus::loaded && loaded.settings.audio.master_volume == 0.3F,
               "Settings persistence");
@@ -782,7 +800,7 @@ private:
         }
     }
     void activate(int id) {
-        if (id != 7 && id != 19) sound(Cue::select);
+        if (id != 7 && id != 19 && id != 44) sound(Cue::select);
         switch(id) {
         case 1: start_campaign(); go(Screen::play); break;
         case 2: go(Screen::lobby); break;
@@ -819,6 +837,7 @@ private:
             if (const auto code = online_.room_code(); !code.empty())
                 notice_ = SDL_SetClipboardText(code.c_str()) ? "Room code copied." : "Could not copy room code.";
             break;
+        case 44: audio_.toggle_music(settings_.audio.master_volume); break;
         case 34: advance_campaign(); break;
         case 21:
             tools_tab_ = ToolsTab::level_document;
@@ -918,6 +937,10 @@ private:
         const auto scan=e.key.scancode;
         const bool down=e.type==SDL_EVENT_KEY_DOWN;
         if(down && !e.key.repeat) {
+            if (scan == SDL_SCANCODE_M && !address_active_ && !level_path_active_) {
+                audio_.toggle_music(settings_.audio.master_volume);
+                return;
+            }
             if(scan==SDL_SCANCODE_F12) { capture_=true; return; }
             if(scan==SDL_SCANCODE_F3) { if(screen_==Screen::tools) go(tools_return_); else { tools_return_=screen_;go(Screen::tools); } return; }
             if(scan==SDL_SCANCODE_ESCAPE) {
@@ -1001,6 +1024,7 @@ private:
         return screen_==Screen::play;
     }
     void update(float dt) {
+        audio_.update_music();
         elapsed_+=dt;
         if(online_.active() && !update_online(dt)) return;
         if(screen_!=Screen::play || dt<=0) return;
@@ -1274,6 +1298,25 @@ private:
         button(50, 610, 300, "LIVE ENTITIES", 22);
         button(440, 610, 400, "BACK", 16);
     }
+    void draw_music_button() {
+        if (!audio_.music_available()) return;
+        const auto [x, y, w, h] = music_button;
+        const SDL_FPoint pointer{mx_, my_};
+        const bool hovered = SDL_PointInRectFloat(&pointer, &music_button);
+        const bool focused = screen_ != Screen::play && focus_ == static_cast<int>(buttons_.size());
+        const bool muted_music = audio_.music_muted();
+        rounded(x, y, w, h, 8, hovered || focused ? orange : blue);
+        rounded(x + 2, y + 2, w - 4, h - 4, 7, navy);
+        const SDL_Color ink = muted_music ? muted : cyan;
+        ellipse(x + 20, y + 24, 5, 3.5F, ink);
+        rect(x + 23, y + 8, 3, 16, ink);
+        rect(x + 25, y + 8, 10, 3, ink);
+        if (muted_music) {
+            color(orange);
+            SDL_RenderLine(renderer_.get(), x + 14, y + 8, x + 39, y + 27);
+        }
+        buttons_.push_back({music_button, muted_music ? "Turn music on" : "Turn music off", 44});
+    }
     void draw() {
         buttons_.clear(); background();
         switch(screen_) {
@@ -1382,6 +1425,7 @@ private:
         }
         }
         if(!notice_.empty()) { rect(20,659,1240,23,navy); text(28,663,notice_,1.5F,cyan); }
+        draw_music_button();
     }
     void save_frame(const std::filesystem::path& file) {
         std::unique_ptr<SDL_Surface,decltype(&SDL_DestroySurface)> surface(SDL_RenderReadPixels(renderer_.get(),nullptr),SDL_DestroySurface);
