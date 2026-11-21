@@ -32,6 +32,16 @@ class SoundBank {
 
     Voice music_;
     bool music_enabled_{};
+    bool music_muted_{};
+
+    void apply_music_volume(float master_volume) {
+        if (!music_.stream) return;
+        const float gain = music_muted_ ? 0.0F : 0.55F * master_volume;
+        SDL_SetAudioStreamGain(music_.stream.get(), gain);
+        music_enabled_ = gain > 0.0F;
+        if (!music_enabled_) SDL_ClearAudioStream(music_.stream.get());
+        update_music();
+    }
 
     Voice load(engine::FileResourceManager& files, const std::string& name) {
         try {
@@ -72,6 +82,13 @@ public:
     int music_queued() const {
         return music_.stream ? SDL_GetAudioStreamQueued(music_.stream.get()) : 0;
     }
+    bool music_available() const { return static_cast<bool>(music_.stream); }
+    bool music_muted() const { return music_muted_; }
+    void toggle_music(float master_volume) {
+        if (!music_available()) return;
+        music_muted_ = !music_muted_;
+        apply_music_volume(master_volume);
+    }
 
     void update_music() {
         if (!music_.stream || !music_enabled_) return;
@@ -92,13 +109,7 @@ public:
         return voice.stream ? SDL_GetAudioStreamQueued(voice.stream.get()) : 0;
     }
     void apply(const engine::AudioSettings& settings) {
-        if (music_.stream) {
-            const float music_gain = 0.55F * settings.master_volume;
-            SDL_SetAudioStreamGain(music_.stream.get(), music_gain);
-            music_enabled_ = music_gain > 0.0F;
-            if (!music_enabled_) SDL_ClearAudioStream(music_.stream.get());
-            update_music();
-        }
+        apply_music_volume(settings.master_volume);
         const float gain = settings.sound_effects ? settings.master_volume : 0.0F;
         for (auto& voice : voices_) if (voice.stream) {
             SDL_SetAudioStreamGain(voice.stream.get(), gain);
