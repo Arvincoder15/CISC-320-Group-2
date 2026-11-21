@@ -11,6 +11,7 @@
 #include "font_metrics.hpp"
 #include "demo_walkthrough.hpp"
 #include "net_play.hpp"
+#include "sound_bank.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -42,9 +43,12 @@ struct GameplayCamera {
 };
 using Window = std::unique_ptr<SDL_Window, decltype(&SDL_DestroyWindow)>;
 using Renderer = std::unique_ptr<SDL_Renderer, decltype(&SDL_DestroyRenderer)>;
-using Audio = std::unique_ptr<SDL_AudioStream, decltype(&SDL_DestroyAudioStream)>;
+using prototype::Cue;
 struct SdlLifetime {
-    SdlLifetime() { if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) throw std::runtime_error(SDL_GetError()); }
+    SdlLifetime() {
+        if (!SDL_Init(SDL_INIT_VIDEO)) throw std::runtime_error(SDL_GetError());
+        if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) std::cerr << "Audio unavailable: " << SDL_GetError() << '\n';
+    }
     ~SdlLifetime() { SDL_Quit(); }
 };
 
@@ -92,11 +96,8 @@ public:
         SDL_SetRenderLogicalPresentation(r, 1280, 720, SDL_LOGICAL_PRESENTATION_LETTERBOX);
         SDL_SetRenderVSync(r, 1);
         if (!SDL_SetWindowFullscreen(w, settings_.window.fullscreen)) notice_ = "Fullscreen unavailable.";
-        SDL_AudioSpec spec{}; spec.format = SDL_AUDIO_F32; spec.channels = 1; spec.freq = 48000;
-        audio_.reset(SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr));
-        if (audio_) SDL_ResumeAudioStreamDevice(audio_.get());
-        else std::cerr << "Audio unavailable: " << SDL_GetError() << '\n';
         load_font();
+        if (SDL_WasInit(SDL_INIT_AUDIO)) audio_.open(assets_);
         world_renderer_=std::make_unique<engine::SdlRenderer>(r,engine::Vec2{width,height});
         const auto render_assets=asset_directory().parent_path()/"rendering-assets";
         world_renderer_->load_texture("characters",render_assets/"characters.bmp");
@@ -127,10 +128,14 @@ public:
     void smoke_test(const std::filesystem::path& captures) {
         if(!captures.empty()) std::filesystem::create_directories(captures);
         const auto check = [](bool ok, const char* message) { if (!ok) throw std::runtime_error(message); };
-        check(assets_.size() == 1, "Startup cached the font atlas");
-        check(assets_.load("font.bmp") == assets_.load("./font.bmp") && assets_.size() == 1,
+        check(audio_.device() && SDL_PauseAudioDevice(audio_.device()), "Audio output available for smoke test");
+        // With output paused the mixer can't drain the queues between a real input event and its assertion.
+        const auto asset_count = 1 + static_cast<std::size_t>(Cue::count);
+        check(assets_.size() == asset_count, "Startup cached the font and seven WAV files");
+        check(assets_.load("font.bmp") == assets_.load("./font.bmp") && assets_.size() == asset_count,
               "Font requests reuse the cached atlas");
         draw(); click(640, 245); check(screen_ == Screen::play, "Local Play navigation");
+        check(audio_.queued(Cue::select) > 0, "Local Play queues a menu sound");
         key(SDL_SCANCODE_D, true); key(SDL_SCANCODE_RIGHT, true);
         update(0.05F); check(position(0).x > 150 && position(1).x > 1130, "Independent keyboard movement");
         draw();
@@ -146,6 +151,12 @@ public:
         if(!captures.empty()) save_frame(captures/"11-level-1-easy.bmp");
         key(SDL_SCANCODE_W, true); update(0.05F);
         check(position(0).y < 580 && std::abs(position(1).y-580)<1, "Independent jump");
+        check(audio_.queued(Cue::fire_jump)>0 && audio_.queued(Cue::water_jump)==0, "Fire's jump uses its own sound");
+        key(SDL_SCANCODE_UP, true); update(0.016F);
+        check(audio_.queued(Cue::water_jump)>0 && audio_.queued(Cue::fire_jump)>0, "Both jump sounds can overlap");
+        const auto clear_audio = [this] { audio_.apply({0.0F,false}); audio_.apply(settings_.audio); };
+        clear_audio(); update(0.016F);
+        check(!audio_.queued(Cue::fire_jump) && !audio_.queued(Cue::water_jump), "Staying airborne is silent");
         SDL_Event focus{}; focus.type = SDL_EVENT_WINDOW_FOCUS_LOST; handle(focus);
         check(screen_ == Screen::pause, "Focus loss pauses");
         check(inputs_[0].consume().move_x == 0 && inputs_[1].consume().move_x == 0, "Focus clears input");
@@ -158,6 +169,11 @@ public:
               game_.enemies()[0].animation_time == paused_enemy_animation,
               "Pause freezes acid enemy movement and animation");
         draw(); click(640, 430); check(screen_ == Screen::settings, "Pause settings navigation");
+        draft_.audio.master_volume=0; draw(); click(860,495);
+        check(!audio_.queued(Cue::water_jump), "Zero draft volume mutes preview");
+        draft_.audio.master_volume=0.3F; draw(); click(860,495);
+        check(audio_.queued(Cue::water_jump)>0 && settings_.audio.master_volume!=draft_.audio.master_volume,
+              "Preview uses the draft without saving it");
         draft_.audio.master_volume = 0.3F; draft_.audio.sound_effects = false;
         apply_settings();
         const auto loaded = engine::load_user_settings(path_);
@@ -166,6 +182,8 @@ public:
         reset_game(); screen_ = Screen::play;
         game_.touch_hazard(0,elemental_coop::Hazard::water); update(0.01F);
         check(screen_ == Screen::lost, "Hazard triggers Game Over");
+        check(!audio_.queued(Cue::defeat) && !audio_.queued(Cue::water_jump), "Applied mute clears and suppresses effects");
+        draft_.audio.sound_effects=true; apply_settings();
         auto encounter = campaign_[0];
         const auto acid_spawn = encounter.enemy_spawns[0].position;
         // Start on a separate ledge, then drop onto the slime's floor.
@@ -177,10 +195,12 @@ public:
         key(SDL_SCANCODE_A, false);
         for (int tick = 0; tick < 180 && screen_ == Screen::play; ++tick) update(0.01F);
         check(screen_ == Screen::lost, "Acid enemy contact routes to Game Over");
+        check(audio_.queued(Cue::defeat)>0, "Defeat has its own sound");
         game_.load(campaign_[0]);
         reset_game(); screen_ = Screen::play;
         prototype::verification::solve(game_); update(0.01F);
         check(screen_ == Screen::won, "Physical route reaches both exits");
+        check(audio_.queued(Cue::complete)>0, "Easy victory plays the completion cue");
         draw(); click(270, 535);
         check(screen_ == Screen::play && campaign_index_ == 1 &&
               game_.definition().name == "Level 2 - Medium",
@@ -199,14 +219,14 @@ public:
               "Runtime Medium loads one centered upper platform for each player");
         draw();
         if(!captures.empty()) save_frame(captures/"12-level-2-medium.bmp");
-        prototype::verification::solve_medium(game_); update(0.01F);
-        check(screen_ == Screen::won, "Physical route completes Medium");
+        clear_audio(); prototype::verification::solve_medium(game_); update(0.01F);
+        check(screen_ == Screen::won && audio_.queued(Cue::complete)>0, "Medium victory screen and sound");
         draw(); click(270, 535);
         check(screen_ == Screen::play && campaign_index_ == 2 &&
               game_.definition().name == "Level 3 - Hard",
               "Next Level advances Medium to Hard");
-        prototype::verification::solve_hard(game_); update(0.01F);
-        check(screen_ == Screen::won && campaign_index_ == 2,
+        clear_audio(); prototype::verification::solve_hard(game_); update(0.01F);
+        check(screen_ == Screen::won && campaign_index_ == 2 && audio_.queued(Cue::complete)>0,
               "Hard completion reaches the final campaign state");
         exercise_inspector(check);
         check(gameplay_camera(campaign_[0].name).scale == 1.0F &&
@@ -244,6 +264,18 @@ public:
         check(exit_visible(game_.definition().exits[0], "FIRE EXIT") &&
               exit_visible(game_.definition().exits[1], "WATER EXIT"),
               "Hard keeps both complete exit portals and labels in frame");
+        // Stage the two actors at the controls, then use the real E binding and physics tick.
+        auto puzzle = campaign_[0];
+        const auto& gate = puzzle.gates.front();
+        puzzle.spawns = {engine::Vec2{gate.lever.x + gate.lever.w/2, gate.lever.y+gate.lever.h},
+                         engine::Vec2{gate.plate.x + gate.plate.w/2, gate.plate.y+gate.plate.h}};
+        game_.load(puzzle); go(Screen::play); clear_audio();
+        key(SDL_SCANCODE_E,true); update(0.016F);
+        check(game_.gate_open(0) && audio_.queued(Cue::lever)>0 && audio_.queued(Cue::gate)>0,
+              "Switch and gate transitions play distinct sounds");
+        clear_audio(); update(0.016F);
+        check(!audio_.queued(Cue::lever) && !audio_.queued(Cue::gate), "A latched gate stays silent");
+        start_campaign();
         // Exercise lobby controls with loopback. net_session checks real ENet sockets separately.
         go(Screen::menu); draw(); click(640, 315);
         check(screen_ == Screen::lobby, "Multiplayer opens the lobby");
@@ -284,8 +316,8 @@ private:
     std::array<engine::SpriteAnimation,2> animations_{
         engine::SpriteAnimation(4,4,{32,32},10),engine::SpriteAnimation(4,4,{32,32},10)};
     std::array<engine::SpriteDraw,2> last_player_draws_{};
-    Audio audio_{nullptr, SDL_DestroyAudioStream};
     engine::FileResourceManager assets_;
+    prototype::SoundBank audio_;
     std::filesystem::path path_;
     engine::EngineSettings settings_{}, draft_{};
     std::array<prototype::PlayableLevelDefinition, 3> campaign_;
@@ -293,6 +325,13 @@ private:
     prototype::DemoLevel game_;
     prototype::OnlinePlay online_;
     bool room_mode_;
+    struct SoundFrame {
+        struct Gate { bool lever{}, open{}; };
+        std::size_t level{};
+        std::array<bool,2> grounded{};
+        std::vector<Gate> gates;
+    };
+    std::optional<SoundFrame> previous_sound_frame_;
     std::optional<engine::LevelDocument> inspection_document_;
     std::optional<engine::LevelInspectionSnapshot> inspection_snapshot_;
     engine::InspectionMetrics inspection_metrics_{};
@@ -321,6 +360,8 @@ private:
     void go(Screen next) {
         clear_input(); screen_ = next; focus_ = 0; controls_ = false;
         address_active_ = false; level_path_active_ = false; SDL_StopTextInput(window_.get());
+        if (next == Screen::play) observe_gameplay_sounds(false);
+        else previous_sound_frame_.reset();
     }
     void reset_animation() { for(auto& animation:animations_) animation.reset(); }
     void reset_game() { clear_input(); game_.restart(); reset_animation(); }
@@ -694,14 +735,34 @@ private:
         text(x+(w-text_width(label,scale))/2,y+18,label,scale,enabled?white:muted);
         buttons_.push_back({box,label,id,enabled});
     }
-    void tone() {
-        if (!audio_ || !settings_.audio.sound_effects) return;
-        std::array<float,2400> samples{};
-        for(std::size_t i=0;i<samples.size();++i)
-            samples[i]=0.12F*settings_.audio.master_volume*std::sin(6.2831853F*660.0F*static_cast<float>(i)/48000.0F)
-                *(1.0F-static_cast<float>(i)/static_cast<float>(samples.size()));
-        SDL_ClearAudioStream(audio_.get());
-        SDL_PutAudioStreamData(audio_.get(),samples.data(),static_cast<int>(sizeof(samples)));
+    void sound(Cue cue) { audio_.play(cue, settings_.audio); }
+
+    // Observe the same state in local and network play without modifying the simulation.
+    // Start silently on each level or return to play so old events do not replay.
+    void observe_gameplay_sounds(bool emit) {
+        if (!previous_sound_frame_ || previous_sound_frame_->level != campaign_index_ ||
+            previous_sound_frame_->gates.size() != game_.gate_count()) {
+            auto& frame = previous_sound_frame_.emplace();
+            frame.level = campaign_index_;
+            frame.gates.resize(game_.gate_count());
+            emit = false;
+        }
+        auto& last = *previous_sound_frame_;
+        for (std::size_t i = 0; i < last.grounded.size(); ++i) {
+            const auto& player = game_.player(i);
+            if (emit && last.grounded[i] && !player.grounded && player.body.velocity.y < 0)
+                sound(i == 0 ? Cue::fire_jump : Cue::water_jump);
+            last.grounded[i] = player.grounded;
+        }
+        bool lever_changed = false, door_opened = false;
+        for (std::size_t i = 0; i < last.gates.size(); ++i) {
+            const SoundFrame::Gate now{game_.gate_lever_on(i), game_.gate_open(i)};
+            lever_changed |= now.lever != last.gates[i].lever;
+            door_opened |= now.open && !last.gates[i].open;
+            last.gates[i] = now;
+        }
+        if (emit && lever_changed) sound(Cue::lever);
+        if (emit && door_opened) sound(Cue::gate);
     }
     void apply_settings() {
         try {
@@ -712,7 +773,7 @@ private:
                 throw std::runtime_error(SDL_GetError());
             std::filesystem::create_directories(path_.parent_path());
             engine::save_engine_settings(path_,draft_);
-            settings_=draft_; notice_="Settings applied and saved."; tone();
+            settings_=draft_; audio_.apply(settings_.audio); notice_="Settings applied and saved."; sound(Cue::select);
         } catch(const std::exception& error) {
             SDL_SetWindowFullscreen(window_.get(),settings_.window.fullscreen);
             if(!settings_.window.fullscreen) SDL_SetWindowSize(window_.get(),settings_.window.width,settings_.window.height);
@@ -721,7 +782,7 @@ private:
         }
     }
     void activate(int id) {
-        tone();
+        if (id != 7 && id != 19) sound(Cue::select);
         switch(id) {
         case 1: start_campaign(); go(Screen::play); break;
         case 2: go(Screen::lobby); break;
@@ -742,7 +803,7 @@ private:
         case 16: go(tools_return_); break;
         case 17: selected_=1-selected_; break;
         case 18: reset_game(); notice_="Active level reloaded."; break;
-        case 19: tone(); break;
+        case 19: audio_.play(Cue::water_jump, draft_.audio); break;
         case 20: if(online_.active()) online_.request(elemental_coop::ControlKind::pause); else go(Screen::pause); break;
         case 33:
             if(!online_.active()) { reset_game(); go(Screen::play); break; }
@@ -950,8 +1011,9 @@ private:
                 animations_[i].advance(dt);
             } else animations_[i].reset();
         }
-        if(game_.state()==elemental_coop::RoundState::lost) { go(Screen::lost); tone(); }
-        if(game_.state()==elemental_coop::RoundState::won) { go(Screen::won); tone(); }
+        if(game_.state()==elemental_coop::RoundState::lost) { go(Screen::lost); sound(Cue::defeat); }
+        else if(game_.state()==elemental_coop::RoundState::won) { go(Screen::won); sound(Cue::complete); }
+        else observe_gameplay_sounds(true);
     }
     void background() {
         color(navy); SDL_RenderClear(renderer_.get());
@@ -1257,9 +1319,12 @@ private:
             text(160,235,"Sound effects",2); button(570,215,500,draft_.audio.sound_effects?"ON":"OFF",11);
             text(160,315,"Display",2); button(570,295,500,draft_.window.fullscreen?"FULLSCREEN":"WINDOWED",12);
             text(160,395,"Window size",2); button(570,375,500,std::to_string(draft_.window.width)+" x "+std::to_string(draft_.window.height),14);
-            button(160,465,400,"VIEW CONTROLS",13); button(670,465,400,"TEST SAVED AUDIO",19,static_cast<bool>(audio_));
+            button(160,465,400,"VIEW CONTROLS",13);
+            button(670,465,400,"PREVIEW SOUND",19,audio_.available(Cue::water_jump) && draft_.audio.sound_effects && draft_.audio.master_volume>0.0F);
             if(controls_) center(550,"Fire: A/D/W | Water: arrows | E: lever | Esc: pause",1.3F,cyan);
-            else center(550,"Apply saves preferences. Back discards changes.",1.2F,muted);
+            else center(550,audio_.available(Cue::water_jump)
+                 ? "Preview uses these settings. Apply saves them; Back discards changes."
+                 : "Sound preview unavailable. Apply saves other settings.",1.2F,muted);
             button(270,620,330,"APPLY",7); button(680,620,330,"BACK",8); break;
         }
         case Screen::lost:
