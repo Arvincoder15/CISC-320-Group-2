@@ -51,7 +51,12 @@ See [Remote multiplayer](../../docs/ROOM_RELAY.md) for room codes, a two-window 
 - Pause: Resume, Restart, Settings, Main Menu.
 - Settings: volume, effects toggle, fullscreen, two window sizes, controls display.
   Apply updates the window and saves via Arvin's API. Back discards pending edits.
-- Audio settings control a generated short test tone. No external sound assets required.
+- Menu selections, Fire and Water jumps, levers, opening doors, losing and
+  finishing a level have distinct sounds. Each peer plays effects locally from
+  observed gameplay; no audio data travels over the network. **Preview Sound**
+  plays Water's jump using the settings on screen before Apply. Zero volume or
+  switching effects off silences playback. A missing clip leaves the game playable
+  and prints the affected file name. No extra audio library is needed.
 - Startup loads settings using `load_user_settings`. Invalid files are preserved,
   defaults are used, and the terminal/UI reports the failure.
 - Apply uses `save_engine_settings` and creates the parent directory first.
@@ -68,7 +73,8 @@ See [Remote multiplayer](../../docs/ROOM_RELAY.md) for room codes, a two-window 
 - FPS and frame time are measured from SDL frame intervals, the live world entity
   count comes from the existing `World`, and cached file resources come from
   `FileResourceManager::size()`. The latter counts cached file data (currently
-  the font atlas), not SDL textures, audio resources, or all game assets. Metrics
+  the font atlas and the bundled WAV files when audio is available), not SDL textures
+  or audio streams. Metrics
   remain optional and display as N/A when the host does not supply a value.
   Level-document file operations use a detached `LevelDocument`; they do not
   load or mutate the playable ECS world.
@@ -142,7 +148,9 @@ explicitly if you want to reset it, then restart or Apply again.
   importer remains a separate engine API. This is not a full visual level editor.
 - This executable owns one SDL event loop and renderer. Coordinate with Aryaman
   before moving it into the final app. Future ImGui input capture must be respected.
-- Audio is a short generated tone only, not a finished music or effects manager.
+- The seven original WAV effects are in `assets/audio/`. To regenerate them,
+  run `python3 apps/ui_prototype/tools/make_sounds.py` at the repository root.
+  The game reads the bundled files directly; Python is not required to play.
 - No root engine APIs or another member's files are modified.
 - Track expanded UI scope in Jira and request rendering/gameplay/infrastructure
   review before merging. Do not describe this as complete SCRUM-10 integration
@@ -226,7 +234,9 @@ Manual checks before SDD submission:
 2. Jump, keep holding the jump key through landing, and confirm no second jump.
 3. Hold movement, switch to another app, return and Resume. Confirm no stuck key.
 4. Exercise Pause, Restart, Settings and Main Menu, including Escape and mouse.
-5. Apply fullscreen/window size and volume. Test audio with effects on/off.
+5. Try Preview Sound at low and high volume. Back should leave the saved volume
+   unchanged. Apply mute, jump or pull a lever, then turn effects back on.
+   Listen for each player's jump, the lever click, the door opening and both result screens.
 6. Close and reopen the application. Confirm settings persist.
 7. Test each level's elemental pools and Retry. Complete the lever/plate puzzle
    with two players, advance through all three levels, and confirm the final

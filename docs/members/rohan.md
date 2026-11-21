@@ -4,7 +4,7 @@ Secondary responsibility: Artist.
 
 ## What is here
 
-InputBuffer supports a held movement axis and one-shot actions. Use a separate buffer per player. No SDL polling, menus, HUD or audio exist.
+InputBuffer supports a held movement axis and one-shot actions. Use a separate buffer per player. The [SDL app](../../apps/ui_prototype/README.md) plays seven gameplay and menu sounds. It loads WAV files through the shared file cache and respects the saved volume and effects settings.
 
 - Public code: `engine/include/engine/interaction.hpp`
 - Implementation: `engine/src/interaction.cpp`
