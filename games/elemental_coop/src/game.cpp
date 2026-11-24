@@ -1,4 +1,5 @@
 #include "elemental_coop/game.hpp"
+#include "elemental_coop/gameplay_rules.hpp"
 #include <cmath>
 #include <stdexcept>
 namespace elemental_coop {
@@ -54,9 +55,7 @@ void Game::tick(const PlayerInputs& inputs, float dt) {
 void Game::touch_hazard(std::size_t player_index, Hazard hazard) {
     auto& player = players_.at(player_index);
     if (state_ != RoundState::playing) return;
-    const bool safe = (player.element == Element::fire && hazard == Hazard::lava)
-        || (player.element == Element::water && hazard == Hazard::water);
-    if (!safe) {
+    if (!hazard_is_safe(player.element, hazard)) {
         player.alive = false;
         state_ = RoundState::lost;
     }
@@ -67,7 +66,7 @@ void Game::set_exit_contact(std::size_t player_index, bool touching) {
     player.at_exit = touching;
     exit_contact_updated_[player_index] = true;
     if (exit_contact_updated_[0] && exit_contact_updated_[1]
-        && players_[0].alive && players_[1].alive && players_[0].at_exit && players_[1].at_exit)
+        && cooperative_exit_ready(players_))
         state_ = RoundState::won;
 }
 }
