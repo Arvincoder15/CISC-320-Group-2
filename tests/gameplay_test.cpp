@@ -1,8 +1,45 @@
 #include "elemental_coop/game.hpp"
+#include "elemental_coop/gameplay_rules.hpp"
 #include "test_support.hpp"
 #include <limits>
 using namespace elemental_coop;
 int main() { return run_test([] {
+    // A plate alone cannot open a gate. Standard gates allow either operator.
+    GateState gate;
+    CHECK(!gate.update_plate({true, false}, false));
+    CHECK(gate.plate_operator == 0 && !gate.open);
+    gate.interact(0, false);
+    gate.interact(1, false);
+    CHECK(!gate.lever_on && !gate.lever_operator);
+    gate.interact(0, false);
+    CHECK(gate.update_plate({true, false}, false));
+    CHECK(gate.open);
+    CHECK(!gate.update_plate({false, false}, false));
+    CHECK(gate.open && !gate.plate_operator); // Door remains open; no repeat transition.
+    gate = {};
+    CHECK(!gate.open && !gate.lever_on && !gate.plate_operator && !gate.lever_operator);
+    // Medium/Hard require distinct operators; a second interaction cannot steal the lever.
+    gate.interact(0, true);
+    gate.interact(1, true);
+    CHECK(gate.lever_on && gate.lever_operator == 0);
+    CHECK(!gate.update_plate({true, false}, true));
+    CHECK(gate.plate_operator == 0);
+    CHECK(gate.update_plate({true, true}, true));
+    CHECK(gate.plate_operator == 1 && gate.open);
+    GateState second_gate;
+    second_gate.interact(1, true);
+    CHECK(!second_gate.update_plate({false, true}, true));
+    CHECK(second_gate.update_plate({true, false}, true));
+    CHECK(throws_as<std::out_of_range>([&] { second_gate.interact(2, true); }));
+    std::array<PlayerState, player_count> players{};
+    CHECK(!cooperative_exit_ready(players));
+    players[0].at_exit = true;
+    CHECK(!cooperative_exit_ready(players));
+    players[1].at_exit = true;
+    CHECK(!cooperative_exit_ready(players, false));
+    CHECK(cooperative_exit_ready(players));
+    players[1].alive = false;
+    CHECK(!cooperative_exit_ready(players));
     Game game;
     const auto position = [&](std::size_t index) {
         return game.world().find(game.player(index).entity)->position;

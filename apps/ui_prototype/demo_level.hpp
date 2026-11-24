@@ -1,6 +1,7 @@
 #pragma once
 
 #include "elemental_coop/game.hpp"
+#include "elemental_coop/gameplay_rules.hpp"
 #include "elemental_coop/net.hpp"
 #include "playable_level.hpp"
 #include "acid_pursuit.hpp"
@@ -68,17 +69,7 @@ public:
 
         auto& gate_state = runtime.gates[selected_gate];
         const auto& gate_definition = active_->definition.gates[selected_gate];
-        if (gate_definition.require_distinct_operators) {
-            if (!gate_state.lever_on) {
-                gate_state.lever_on = true;
-                gate_state.lever_operator = selected_player;
-            }
-        } else {
-            gate_state.lever_on = !gate_state.lever_on;
-            gate_state.lever_operator = gate_state.lever_on
-                ? std::optional<std::size_t>{selected_player}
-                : std::nullopt;
-        }
+        gate_state.interact(selected_player, gate_definition.require_distinct_operators);
     }
 
     void tick(const elemental_coop::PlayerInputs& frames, float dt) {
@@ -119,27 +110,12 @@ public:
         for (std::size_t gate_index = 0; gate_index < runtime.gates.size(); ++gate_index) {
             auto& gate_state = runtime.gates[gate_index];
             const auto& gate_definition = active_->definition.gates[gate_index];
-            gate_state.plate_operator.reset();
-            std::optional<std::size_t> first_occupant;
-            for (std::size_t player_index = 0; player_index < elemental_coop::player_count; ++player_index) {
-                if (engine::overlaps(player_bounds(position(player_index)), bounds(gate_definition.plate))) {
-                    if (!first_occupant) first_occupant = player_index;
-                    if (!gate_definition.require_distinct_operators ||
-                        !gate_state.lever_operator ||
-                        *gate_state.lever_operator != player_index) {
-                        gate_state.plate_operator = player_index;
-                        break;
-                    }
-                }
+            std::array<bool, elemental_coop::player_count> occupants{};
+            for (std::size_t player_index = 0; player_index < occupants.size(); ++player_index) {
+                occupants[player_index] = engine::overlaps(
+                    player_bounds(position(player_index)), bounds(gate_definition.plate));
             }
-            if (!gate_state.plate_operator) gate_state.plate_operator = first_occupant;
-            const bool distinct_operators =
-                !gate_definition.require_distinct_operators ||
-                (gate_state.lever_operator && gate_state.plate_operator &&
-                 *gate_state.lever_operator != *gate_state.plate_operator);
-            if (!gate_state.open && gate_state.lever_on &&
-                gate_state.plate_operator && distinct_operators) {
-                gate_state.open = true;
+            if (gate_state.update_plate(occupants, gate_definition.require_distinct_operators)) {
                 opened_gate = true;
                 runtime.world.destroy(runtime.door_entities[gate_index]);
             }
@@ -156,21 +132,19 @@ public:
             }
         }
 
-        bool both_at_exits = true;
+        const bool gates_open = all_gates_open();
         for (std::size_t i = 0; i < elemental_coop::player_count; ++i) {
-            runtime.players[i].at_exit = all_gates_open() &&
+            runtime.players[i].at_exit = gates_open &&
                 engine::overlaps(player_bounds(position(i)),
                                  bounds(active_->definition.exits[i].area));
-            both_at_exits = both_at_exits && runtime.players[i].at_exit;
         }
-        if (both_at_exits) runtime.state = elemental_coop::RoundState::won;
+        if (elemental_coop::cooperative_exit_ready(runtime.players, gates_open)) runtime.state = elemental_coop::RoundState::won;
     }
 
     void touch_hazard(std::size_t i, elemental_coop::Hazard hazard) {
-        const bool safe = (i == 0 && hazard == elemental_coop::Hazard::lava) ||
-                          (i == 1 && hazard == elemental_coop::Hazard::water);
-        if (!safe) {
-            active_->runtime.players.at(i).alive = false;
+        auto& player = active_->runtime.players.at(i);
+        if (!elemental_coop::hazard_is_safe(player.element, hazard)) {
+            player.alive = false;
             active_->runtime.state = elemental_coop::RoundState::lost;
         }
     }
@@ -250,12 +224,6 @@ public:
     }
 
 private:
-    struct GateState {
-        bool lever_on{};
-        bool open{};
-        std::optional<std::size_t> lever_operator;
-        std::optional<std::size_t> plate_operator;
-    };
 
     struct Runtime {
         Runtime() : physics([] {
@@ -272,7 +240,7 @@ private:
         std::vector<AcidEnemy> enemies;
         std::optional<AcidPursuit> pursuit;
         std::array<engine::Vec2, elemental_coop::player_count> pursuit_goals{};
-        std::vector<GateState> gates;
+        std::vector<elemental_coop::GateState> gates;
         std::vector<engine::EntityId> door_entities;
         elemental_coop::RoundState state{elemental_coop::RoundState::playing};
     };
