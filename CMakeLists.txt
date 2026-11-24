@@ -15,7 +15,7 @@ FetchContent_MakeAvailable(enet)
 # ENet's CMake only sets a directory include path and links Winsock for MinGW; fix both for consumers.
 target_include_directories(enet SYSTEM INTERFACE ${enet_SOURCE_DIR}/include)
 if(WIN32)
-    target_link_libraries(enet INTERFACE ws2_32 winmm)
+    target_link_libraries(enet ws2_32 winmm)
 endif()
 
 function(group2_target target)
@@ -30,11 +30,13 @@ endfunction()
 add_library(engine_core INTERFACE)
 target_include_directories(engine_core INTERFACE engine/include)
 target_compile_features(engine_core INTERFACE cxx_std_20)
+
 foreach(module IN ITEMS architecture rendering physics networking ai tools interaction infrastructure)
     add_library(engine_${module} STATIC engine/src/${module}.cpp)
     target_link_libraries(engine_${module} PUBLIC engine_core)
     group2_target(engine_${module})
 endforeach()
+
 # PhysicsSystem reads Body/Collider components from the World.
 target_link_libraries(engine_physics PUBLIC engine_architecture)
 
@@ -43,6 +45,7 @@ target_include_directories(engine_tools SYSTEM PRIVATE third_party/nlohmann_json
 
 target_sources(engine_infrastructure PRIVATE engine/src/resource_files.cpp engine/src/configuration.cpp)
 target_include_directories(engine_infrastructure SYSTEM PRIVATE third_party/nlohmann_json/include)
+
 target_sources(engine_networking PRIVATE engine/src/enet_session.cpp engine/src/room_session.cpp engine/src/room_relay.cpp)
 target_link_libraries(engine_networking PRIVATE enet)
 
@@ -85,6 +88,7 @@ endif()
 # Optional backend: the default headless build remains dependency-free.
 option(GROUP2_BUILD_SDL_RENDERER "Build SDL3 rendering backend and demo" OFF)
 option(GROUP2_FETCH_SDL "Download the project's pinned SDL3 version" OFF)
+
 if(GROUP2_BUILD_SDL_RENDERER)
     if(NOT TARGET SDL3::SDL3)
         if(GROUP2_FETCH_SDL)
@@ -103,16 +107,20 @@ if(GROUP2_BUILD_SDL_RENDERER)
             find_package(SDL3 3.2 CONFIG REQUIRED)
         endif()
     endif()
+
     add_library(engine_sdl_rendering STATIC engine/src/sdl_renderer.cpp)
     target_link_libraries(engine_sdl_rendering PUBLIC engine_rendering SDL3::SDL3 PRIVATE engine_infrastructure)
     group2_target(engine_sdl_rendering)
+
     add_executable(rendering_demo apps/rendering_demo.cpp)
     target_link_libraries(rendering_demo PRIVATE engine_sdl_rendering)
     group2_target(rendering_demo)
+
     add_custom_command(TARGET rendering_demo POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/rendering" "$<TARGET_FILE_DIR:rendering_demo>/rendering-assets"
         VERBATIM)
+
     if(BUILD_TESTING)
         add_executable(test_sdl_rendering tests/sdl_rendering_test.cpp)
         target_include_directories(test_sdl_rendering PRIVATE tests)
@@ -123,6 +131,7 @@ if(GROUP2_BUILD_SDL_RENDERER)
         add_test(NAME rendering_demo_smoke COMMAND rendering_demo --smoke-test)
         set_tests_properties(rendering_demo_smoke PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy")
     endif()
+
     if(NOT GROUP2_UI_STANDALONE)
         add_subdirectory(apps/ui_prototype)
     endif()
