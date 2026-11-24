@@ -1,62 +1,27 @@
-# Proposed architecture and integration contracts
-
-These are starter contracts for team review, not a final SDD or a claim that the full engine exists. Sydney owns the ECS design; Arvin, Gunveer and Blake support architecture review.
-
-## Dependency direction
+# Engine and application architecture
 
 ```mermaid
 flowchart TD
-    App[Executable / composition root] --> Game[cooperative game]
-    App --> Adapters[Rendering, networking, tools, AI, infrastructure]
-    Game --> World[World / future ECS]
-    Game --> Physics[Physics]
-    Game --> Input[Action input]
-    Adapters --> Types[Shared engine types]
-    World --> Types
-    Physics --> Types
+    App["Elemental Co-op SDL application"] --> Campaign["Campaign, puzzles, and enemy behavior"]
+    App --> Engine["Reusable C++ engine"]
+    Campaign --> Engine
+    App --> Net["Elemental Co-op protocol and host/client drivers"]
+    Net --> Engine
+    Relay["Standalone room relay"] --> Engine
 ```
 
-Public engine headers never include `elemental_coop/` headers. The application connects services. Renderers receive draw commands; networking receives snapshots; neither owns game rules. The demo's validation/cache examples are illustrative and do not load a level or image. Fire/water identities, hazard rules, pressure-plate logic and shared completion belong exclusively to `elemental_coop`.
+The SDL application in [`apps/ui_prototype`](../apps/ui_prototype) owns the event loop, screen navigation, campaign progression, and SDL resources. Its campaign adapter maps validated JSON level documents into playable rooms. The [shared game module](../games/elemental_coop/README.md) supplies a smaller headless game and the cooperative network protocol and drivers.
 
-## Current shared contracts
+| Subsystem | Responsibility |
+| --- | --- |
+| World and physics | Entity and component lifetime, body integration, collision masks, contact state, and trigger events |
+| Rendering and interaction | Camera and draw commands, SDL rendering, and per-player action buffering |
+| Development tools | Versioned level documents, validation, native save/load, Tiled object import, and inspector data |
+| Infrastructure | Cached file bytes, settings validation and persistence, and severity-filtered logging |
+| Networking | ENet sessions, host-authoritative snapshots, in-memory test transport, and standalone room relay |
 
-| Area | Contract | Owner / consumer |
-|---|---|---|
-| Coordinates | Pixels, +x right, +y down; seconds for dt; velocities pixels/second | Physics, rendering, gameplay |
-| Entity identity | Unsigned 64-bit ID, zero invalid, no reuse in starter; remote ID mapping TBD | Sydney / Henry |
-| World lifetime | Game owns World; `find` borrows a pointer until entity deletion or world destruction; missing ID returns null | Sydney / all owners |
-| Input | One buffer per player; held movement persists, jump/quit pulses clear after consumption; OS codes stay in the adapter | Rohan / Blake |
-| Movement | Semi-implicit Euler; dt must be finite and nonnegative; initial body values supplied by caller. `PhysicsSystem` adds global gravity (px/s², default 0) to each `Body` acceleration, clamps per-axis speed, and splits steps longer than 1/60 s into at most 8 equal substeps; the caller owns the fixed-step loop | D'Artagnan / Blake, Sydney |
-| Collision | AABB overlap excludes touching edges. `Body` + solid `Collider` entities stop against static colliders (no `Body`) whose layer/mask bits interact; moving bodies do not block each other. Physics writes a `ContactState` component (grounded, supporting entity, ceiling, walls) for each moving body, adding it if missing. Triggers never block and emit enter/stay/leave events in (body, trigger) ID order; `reset()` drops contacts after a restart. Discrete tests only: fast bodies can tunnel (see `physics.hpp`) | D'Artagnan / Blake, Sydney, Rocco |
-| Drawing | Renderer borrows commands during `draw`; recording backend copies them | Aryaman / application |
-| Network | `engine::net::Session` (ENet or in-memory pair) moves bytes for one peer; `elemental_coop` `CoopHost`/`CoopClient` sync the two-player game, host authoritative, joiner sends input only. See [NETWORKING.md](NETWORKING.md). Old `LoopbackTransport`/`StateSnapshot` remain for the integration test | Henry / Rohan (lobby), Blake, Sydney |
-| AI | Position and patrol bounds in, persistent left/right direction out; optional hazard/NPC adapter | Rocco / Blake |
-| Levels | Versioned neutral spawn document; validation returns error strings; no import/save yet | Gunveer / Arvin |
-| Resources | Per-type cache, caller-supplied canonical string keys, injected loader, shared ownership | Arvin / Aryaman, Rohan |
-| Errors | Invalid arguments throw; absent lookup/poll returns null/optional; load failure throws and is not cached | All owners |
+The engine's public interfaces are game-independent. The app maps SDL events to per-player actions, advances gameplay using the engine's physics and world, and renders the resulting state. In online play, the host advances the simulation and sends snapshots. The joiner sends input and applies those snapshots.
 
-All starter services are single-threaded. No global singleton or owning raw pointer is introduced. References, pointers, spans and string_views are borrowed. Owners must not let borrowed references outlive their objects. `ResourceCache::clear()` drops cache ownership but cannot invalidate external shared handles. Loader exceptions propagate; callers decide whether a resource is required or may use a fallback.
+Coordinates use pixels with positive X right and positive Y down. Durations are in seconds. World lookups borrow component data. File cache handles share immutable bytes, so clearing a cache leaves existing handles valid. The application releases its SDL resources before tearing down the associated renderer or audio device.
 
-## Proposed SDL ownership (not yet implemented)
-
-The composition root should own the platform lifetime, rendering backend and services in an explicit order. Rendering owns window/renderer handles through RAII. Resource loaders use matching SDL destruction functions. On shutdown: stop use of assets, destroy scenes and draw commands holding handles, release all asset handles and clear caches, then destroy renderer/window, then shut down SDL. Clearing a cache alone is insufficient if an external texture handle remains alive. Keep SDL resource operations on the main thread until a supported threading policy is agreed.
-
-Rohan and Aryaman must select **one** event-polling owner; events are forwarded to tools and action mapping. Gunveer must coordinate UI capture so editor input does not accidentally trigger gameplay.
-
-## Update order
-
-The demo calls a fixed 1/60-second tick 120 times for two characters, without a real-time accumulator. It still resolves only a temporary flat floor: `engine::PhysicsSystem` now provides floor/wall/ceiling resolution, grounded state and trigger events, but `elemental_coop` has not been switched over to it yet. Proposed application loop: poll OS/network events, buffer actions, consume actions and update AI/gameplay, integrate physics, resolve contacts/game rules, capture authoritative snapshots, then render and draw tools. SDL timing, connecting collision events to game rules, packet authority, and the accumulator remain tasks; do not assume the demo implements them.
-
-The network protocol (ADR NET-3 in [DECISIONS.md](DECISIONS.md)) defines explicit little-endian fields, a version byte, exact message sizes, range checks, stale-packet rules and slot-based identity; `EntityId`s and raw struct memory are never sent.
-
-## First integration milestone
-
-Rohan input → Blake action handling → D'Artagnan movement → Sydney transform → Aryaman draw command. The automated integration suite covers this route for both independent players using recording-renderer and loopback doubles. Patrol AI has its own unit suite and is optional for the game. Next replace rendering/input with SDL adapters for both players; independently prove two real processes can connect before expanding gameplay. Real transport tests remain separate from loopback checks.
-
-## Two-player game boundary
-
-`PlayerInputs` is an array of two action frames. Slots are stable: 0 is fire, 1 is water. Each frame has held `move_x` and one-shot `primary_pressed` (jump) / `quit_requested`. `Game` owns both player entities and body state; the public world is read-only. Invalid input is rejected before either player moves. Restart retains both entity IDs and resets motion, life and exit state; future puzzle components must also reset.
-
-After each positive-duration tick, a future collision adapter (reading `PhysicsSystem::events()`) must report hazards first, then both matching-exit contacts. Tick clears exit contacts; reporting both prevents an old contact from winning a later frame. Loss and win stop movement until restart; either player can request quit. The hazard/exit functions are manual integration seams, not automatic collision detection. Elemental rules and tuning remain reviewable examples.
-
-Networked play uses `elemental_coop::NetSnapshot` instead of `StateSnapshot`: both players by slot (position, velocity, grounded/alive/at-exit) and the round state, sent by the host every tick. Puzzle object states are added when `Game` has plates and doors. Win, loss and restart are decided only by the host's `Game`. See [NETWORKING.md](NETWORKING.md).
+See [networking](NETWORKING.md), [rendering](RENDERING.md), and [resource management](RESOURCE_MANAGEMENT.md) for interface details.

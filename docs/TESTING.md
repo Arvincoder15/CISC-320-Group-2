@@ -1,19 +1,22 @@
-# Test strategy
+# Testing
 
-Twelve CTest suites exist: architecture, rendering, physics, networking, ai, tools, interaction, infrastructure, resource_files, configuration, gameplay and integration. The starter runner uses exceptions and returns nonzero on failure, including Release builds. Each developer owns their suite; Arvin maintains shared setup.
+From the repository root, configure and build the [SDL application](../README.md#build-and-run), then run:
 
-The unit checks exercise ID deletion/non-reuse, copied render commands, motion/overlap boundaries, bounded loopback ordering, patrol-state transitions, level validation, independent held axes and one-shot actions, cache reuse/lifetime/failure, and two-player movement, grounded jumping, elemental hazards, shared loss/restart and joint exits. The integration check follows two independent inputs → gameplay → physics → world → two draw commands → two loopback snapshots. These checks do not establish SDL rendering, real socket behavior or full game correctness.
+```sh
+ctest --test-dir build-ui -C Debug --output-on-failure
+```
 
-Next tests by integration stage:
+| Area | Coverage |
+| --- | --- |
+| Engine | ECS lifecycle, physics and contact events, rendering, input, AI, level tools, file caching, configuration, gameplay, and subsystem integration |
+| Networking | ENet loopback sockets, protocol validation, simulated delay and loss, campaign synchronization, room creation and joining, and disconnect handling |
+| Campaign and UI | Normal-input walkthroughs for the three levels, gate and hazard rules, enemy movement, menu navigation, settings persistence, and level inspection |
+| SDL rendering | Drawing, asset handling, and rendering demo smoke test |
 
-1. SDL window creation, bad texture load and correct resource teardown (platform-dependent integration test).
-2. Valid/invalid JSON configuration, supported Tiled subset, safe failed level reload.
-3. Elemental hazards, joint exit completion, linked pressure plates/doors and repeated shared restart without stale objects.
-4. Two processes connecting, state agreement, malformed packet rejection, ordering and disconnect handling.
-5. Manual menus, input focus, audio levels, tool input capture and cross-platform assets.
+The [core workflow](../.github/workflows/ci.yml) and [SDL rendering workflow](../.github/workflows/rendering.yml) provide CI coverage. Socket tests use loopback. The SDL smoke tests use dummy video and audio drivers.
 
-Record compiler/OS, commit, commands and outcomes with each test report. Log reproducible defects in Jira and attach regression cases. Use CI for headless checks; add explicit environment-specific jobs when graphical/network integrations arrive. See `VALIDATION.md` for checks actually run on the starter.
+## Manual checks
 
-The new resource-file and cache-lifetime cases are described in [resource management](RESOURCE_MANAGEMENT.md).
-
-Configuration tests cover defaults, schema/type/range errors, atomic application and fresh reloads. Logger tests cover subsystem labels and runtime severity thresholds. Current infrastructure verification is in [Arvin's guide](ARVIN_INFRASTRUCTURE.md).
+- Launch the game on a desktop. Move both players, complete a gate puzzle, and check pause and retry.
+- Toggle the music with **M** and the corner icon. Change master volume and sound effects in Settings. Apply the settings, then relaunch to check persistence.
+- Start a two-player session. Confirm that each player controls their own character, both see a gate open, and leaving ends the session. To verify relay reachability, repeat with two computers on different networks using the shared endpoint.

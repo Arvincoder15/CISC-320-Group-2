@@ -2,7 +2,7 @@
 
 The reusable SDL3 backend implements the existing `Renderer::draw` interface. The
 headless `RecordingRenderer` and existing callers remain supported. SDL3 3.2.28
-is the same version already pinned in the UI prototype CI. The backend is optional;
+is the same version already pinned in the SDL rendering workflow. The backend is optional;
 the default build does not download SDL or require a display.
 
 ## Build and run
@@ -29,7 +29,7 @@ runtime. Linux headless machines may need `-DSDL_UNIX_CONSOLE_BUILD=ON` when fet
 and exits. Set `SDL_VIDEODRIVER=dummy` to run without a display. Normal execution
 uses the available graphics driver. Pixel tests use the dummy software driver.
 
-## Contracts for teammates
+## Rendering API
 
 - `SpriteDraw` preserves its original first three aggregate fields. Added fields
   default to native texture dimensions, white tint, layer zero and no rotation.
@@ -70,15 +70,8 @@ never leave the backend, so callers cannot accidentally retain them after shutdo
 All calls are on the main thread. The backend does **not** poll events: the
 application must have a single event owner and forward input as appropriate.
 
-The demo is the composition root for rendering only. Engine code contains no
-fire/water game rules. It illustrates particle effects with ordinary alpha-tinted
-draw commands, not a new gameplay subsystem. Advanced shaders, a general particle
-simulation, screen shake, and integration into Rohan's UI remain follow-up work.
-
-Review the extended draw-command fields with consumers, the cache lifecycle with
-Arvin, event ownership with Rohan, and level adapters with Gunveer. The team has not
-yet recorded approval of these proposed integration choices. Jira and Confluence
-records must be added using real task IDs; none are fabricated by this change.
+The rendering demo illustrates particle-like effects with alpha-tinted draw
+commands. The playable game owns event routing, audio, and gameplay.
 
 ## Test coverage
 
@@ -104,11 +97,5 @@ camera settings are passed to the renderer, including the fit views for Medium a
 Hard. The adapter restores host draw color and blend mode after each submission.
 
 `ui_game_smoke` runs the existing automated Easy, Medium and Hard gameplay routes,
-plus live renderer checks for cache reuse, sprite position and pause behavior. Use
-`build-rendering/apps/ui_prototype/ui_prototype.exe` on this Windows checkout to
-play locally. This game still has no connected multiplayer session; the lobby says
-so in its UI. Networking is Henry's separate subsystem.
-
-Implementation and tests were produced with Codex assistance. Review and understand
-the code and record assistance according to the course/team policy; this document
-does not claim personal diary activity or team approval.
+plus live renderer checks for cache reuse, sprite position and pause behavior.
+See the [main README](../README.md#build-and-run) for the game launch commands.

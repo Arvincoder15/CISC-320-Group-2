@@ -1,29 +1,6 @@
-# Elemental Co-op: SDL3 UI prototype
+# Elemental Co-op SDL application
 
-This optional C++20 / SDL3 executable is based on Rohan's branch at `6532d4e`.
-It was also checked against main at `a17953f` (Gunveer's tools merge).
-It adds a graphical application without changing the shared engine interfaces or
-root CMake configuration. The app-local campaign has three native JSON level
-definitions. It remains a prototype, not the completed game.
-
-## Build on macOS
-
-From the repository root:
-
-```sh
-cmake -S apps/ui_prototype -B build-ui -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DCMAKE_PREFIX_PATH="$(brew --prefix sdl3)"
-cmake --build build-ui --parallel
-ctest --test-dir build-ui --output-on-failure
-./build-ui/ui_prototype
-```
-
-Requires SDL 3.2 or newer, already installed on Rohan's Mac. No SDL_ttf or SDL_image installation is needed. Keep the generated assets folder alongside the executable. CMake copies it automatically.
-
-Requires the repository including the physics/settings/tools merges through main `a17953f`. Tested here with SDL 3.2.28 and GCC on Linux.
-The Mac build and real keyboard/audio checks must be performed on your Mac.
-No automatic dependency downloads occur during CMake configuration.
-If Homebrew cannot install SDL on your macOS version, build SDL 3.2.28 from
-its official source into a user-owned folder and supply that prefix to CMake.
+This executable runs the three-level campaign, local and online multiplayer, settings, and the developer inspector. See the [main README](../../README.md#build-and-run) for build and launch commands.
 
 ## What works
 
@@ -59,7 +36,8 @@ See [Remote multiplayer](../../docs/ROOM_RELAY.md) for room codes, a two-window 
   and prints the affected file name. No extra audio library is needed.
 - An original background track loops through the menus and gameplay on a separate
   SDL stream. Master volume controls both the music and effects. The effects
-  toggle mutes only the cues. Regenerate the music with
+  toggle mutes only the cues. Press **M** or use the bottom-right music icon
+  to toggle background music for the current session. Regenerate the music with
   `python3 apps/ui_prototype/tools/make_music.py` from the repo root.
 - Startup loads settings using `load_user_settings`. Invalid files are preserved,
   defaults are used, and the terminal/UI reports the failure.
@@ -129,36 +107,20 @@ Game Over routing. No additional external libraries or art downloads are require
 The app uses `SDL_GetPrefPath("CISC320Group2", "ElementalCoopPrototype")`.
 SDL selects and creates a platform-appropriate per-user writable directory.
 The full settings path is printed at launch. Screenshots are in its `screenshots/`
-subfolder. This is an isolated prototype location for team review, not a final
-team-wide storage policy. It never writes configuration into packaged assets.
+subfolder. The packaged assets remain read-only during normal play.
 Corrupt files are not silently overwritten. Back up/rename the rejected file
 explicitly if you want to reset it, then restart or Apply again.
 
-## Scope and integration handoff
+## Bundled assets
 
-- Multiplayer address entry is a UI preview. Host, Join and Start are disabled.
-  No connection status is fabricated and no real network session is created.
-- One level only. Next Level is disabled on completion.
-- Room rules and geometry live in `demo_level.hpp` within this app. They do not
-  replace Blake's shared gameplay module. This is a temporary playable reference
-  room, not the final Tiled-level integration. Review the puzzle rule with the team.
-- Artwork is drawn with SDL primitives, with a bundled DejaVu Sans Bold glyph atlas
-  for smooth text. Its redistribution license is in `assets/FONT-LICENSE.txt`.
-  No new runtime library is needed. Original RAD images are design references,
-  not screenshots of this executable. The recreation is not pixel-identical.
-- Developer Tools provides a live-player inspector and a detached Level Document
-  inspector. It does not edit live ECS entities or instantiate level objects.
-  Native document persistence is not Tiled JSON import; the existing Tiled
-  importer remains a separate engine API. This is not a full visual level editor.
-- This executable owns one SDL event loop and renderer. Coordinate with Aryaman
-  before moving it into the final app. Future ImGui input capture must be respected.
-- The seven original WAV effects are in `assets/audio/`. To regenerate them,
-  run `python3 apps/ui_prototype/tools/make_sounds.py` at the repository root.
-  The game reads the bundled files directly; Python is not required to play.
-- No root engine APIs or another member's files are modified.
-- Track expanded UI scope in Jira and request rendering/gameplay/infrastructure
-  review before merging. Do not describe this as complete SCRUM-10 integration
-  into the final graphical application.
+The UI uses a DejaVu Sans Bold atlas. Its redistribution license is in
+[`assets/FONT-LICENSE.txt`](assets/FONT-LICENSE.txt). The SDL renderer uses the
+[shared rendering assets](../../assets/rendering/README.md) for platform tiles
+and player sprites.
+
+The seven original sound effects are in `assets/audio/`. To regenerate them,
+run `python3 apps/ui_prototype/tools/make_sounds.py` from the repository root.
+The game reads the bundled files directly.
 
 ## Playable level data and authoring
 
@@ -233,24 +195,7 @@ These are programmatically staged running UI states for layout review. For SDD
 interaction evidence, also take screenshots during your manual walkthrough.
 On Mac use Command+Shift+4 then Space to capture the application window.
 
-Manual checks before SDD submission:
-1. Open Local Play. Move both players at once. Release one player's movement key.
-2. Jump, keep holding the jump key through landing, and confirm no second jump.
-3. Hold movement, switch to another app, return and Resume. Confirm no stuck key.
-4. Exercise Pause, Restart, Settings and Main Menu, including Escape and mouse.
-5. Try Preview Sound at low and high volume. Back should leave the saved volume
-   unchanged. Apply mute, jump or pull a lever, then turn effects back on.
-   Listen for each player's jump, the lever click, the door opening and both result screens.
-6. Close and reopen the application. Confirm settings persist.
-7. Test each level's elemental pools and Retry. Complete the lever/plate puzzle
-   with two players, advance through all three levels, and confirm the final
-   completion screen. Verify that restarting Medium or Hard resets only that
-   level's gates, controls, spawns and win state.
-8. Open F3 and confirm live values match the selected player. Switch to Level
-   Document, select an object, inspect its relationships, and load/save/reload a
-   copy of the bundled sample. Try malformed JSON and confirm the last valid
-   document remains visible. Return to gameplay and verify it is unchanged.
-9. Check the lobby clearly indicates that multiplayer is unfinished.
+See [testing](../../docs/TESTING.md#manual-checks) for the desktop and multiplayer checks.
 
 ## Files and verification helpers
 
@@ -260,9 +205,4 @@ definitions. `demo_level.hpp` owns the level-local runtime and puzzle rules.
 `demo_walkthrough.hpp` is the deterministic physics walkthrough shared by the
 test and `--smoke-test`. `level_test.cpp` runs adapter, rule, and route checks.
 `font_metrics.hpp` and
-`assets/font.bmp` hold the text atlas. `SDD_GUI_SECTION.md` describes this version.
-
-Automated verification and manual playtesting are reported separately; the
-headless SDL smoke test does not verify real display, fullscreen, audio output,
-or physical keyboard rollover. See the latest implementation report for the
-exact test commands and results.
+`assets/font.bmp` hold the text atlas.

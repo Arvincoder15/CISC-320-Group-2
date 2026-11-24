@@ -1,4 +1,4 @@
-# Settings persistence — step 3
+# Settings persistence
 
 Branch: `feature/arvin-settings-persistence`, based on the merged infrastructure work.
 
@@ -41,7 +41,7 @@ try {
 The API assumes one writer and a trusted, stable user-settings directory. It does
 not coordinate concurrent processes or guarantee durability after power loss.
 Abrupt process termination can leave a temporary directory. Filesystem replacement
-behavior has been exercised on macOS; Windows/Linux verification remains pending.
+behavior is covered by the configuration suite.
 
 `serialize_engine_settings` still produces standalone JSON text only. Use the save
 API when updating a shared document so unrelated sections are retained.
@@ -84,16 +84,9 @@ user file and reports the resulting settings. The demo does not automatically sa
 Tests exercise missing folders, successful loading, malformed/schema/value errors,
 directory/symlink rejection, invalid defaults, and preservation of rejected files.
 
-## Integration handoff
+## SDL application integration
 
-1. Agree on the writable user-settings location with Rohan. The engine accepts an
-   application-supplied path so it does not hardcode an operating-system folder.
-2. Call the startup helper from the graphical application's initialization and
-   apply the returned values to its actual window and audio device.
-3. Connect Apply to saving and live window/audio changes. Create the writable
-   parent folder before the first save, report save failures, and allow the user
-   to repair/reset corrupt saved settings explicitly.
-
-The startup policy is implemented and demonstrated; graphical application and
-settings-screen integration remain pending. Main's latest ECS, AI and physics
-changes have been merged into this branch without conflicts.
+The game uses `SDL_GetPrefPath` to select a writable settings directory. It
+loads the saved options at startup. **Apply** writes the file and applies the
+pending window and audio settings. A failed save restores the prior window
+state. **Back** discards pending changes. See [storage](../apps/ui_prototype/README.md#storage).

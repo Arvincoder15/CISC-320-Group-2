@@ -4,7 +4,7 @@ Both games connect outward to a relay. Fire creates the room and runs the
 match. Water joins by code and receives the game state. The relay forwards ENet
 messages between the pair. Direct-IP play remains available by default.
 
-## Test from this branch
+## Test on one computer
 
 Build the game and relay together:
 
@@ -33,12 +33,12 @@ being rejected, disconnect, and retry.
 
 ## Play across different networks using Playit
 
-1. Run `./build-ui/engine-build/room_relay 7777` on the host Mac.
-2. Install and link the [Playit agent](https://playit.gg/download/macos) on that
-   Mac. Create a UDP tunnel that targets local address `127.0.0.1` and port
+1. Run `./build-ui/engine-build/room_relay 7777` on the machine running the relay.
+2. Install and link the Playit agent on the relay machine. Create a UDP
+   tunnel that targets local address `127.0.0.1` and port
    `7777`. Keep the relay and agent running during the match.
 3. Copy the tunnel's assigned public address **including its UDP port**. Both
-   players must run this branch and connect to the same relay. The host can use
+   players must run the same game version and connect to the same relay. The host can use
    the local endpoint while the friend uses the following command with the
    assigned public endpoint substituted:
 
@@ -49,7 +49,7 @@ being rejected, disconnect, and retry.
    In Windows PowerShell, set
    `$env:ELEMENTAL_COOP_RELAY = "your-tunnel-hostname:12345"` and launch the
    game executable. The friend only needs the game.
-4. On the Mac, create a room and send your friend the code. They choose
+4. In the host game, create a room and send your friend the code. They choose
    **Join Room**, enter the code, and you click **Start Game**.
 
 For a shared build, set
@@ -59,20 +59,16 @@ port defaults to 7777 when omitted.
 ## Deploy for two different networks
 
 Use a Linux VM with systemd, a public IPv4 address, and inbound UDP support.
-An Oracle Cloud Always Free-eligible VM is one option if your home region has
-capacity. Select an eligible shape and keep the instance within the free limits.
-Allow stateful IPv4 ingress for **UDP destination port 7777**, with any source
-port, in the instance's network security group or subnet security list. For a
-private team test, limit the source addresses to the players' public IPv4
-addresses. The VM's own firewall also needs to permit this traffic.
+Allow UDP destination port 7777 in the VM's firewall and the provider's network
+rules. Both players must be able to reach that port. The relay stays online
+while the VM and service are running, independently of either player's computer.
 
-On an Ubuntu VM, install the build tools and run the installer from the branch:
+On an Ubuntu VM, install the build tools and run the installer from the project
+checkout:
 
 ```sh
 sudo apt-get update
 sudo apt-get install --no-install-recommends git cmake build-essential
-git clone --branch feature/arvin-room-code-relay https://github.com/Arvincoder15/CISC-320-Group-2.git
-cd CISC-320-Group-2
 bash deploy/install-room-relay.sh
 ```
 
@@ -86,14 +82,13 @@ Both players launch the same game commit with
 `ELEMENTAL_COOP_RELAY` set to the relay hostname or IPv4 address. A packaged
 build can set `-DGROUP2_RELAY_ADDRESS=relay.example.com` when configuring the UI,
 so players can open the game normally. An empty `ELEMENTAL_COOP_RELAY`
-environment override selects direct-IP mode. GitHub Pages can link to the game
-build but cannot run this relay.
+environment override selects direct-IP mode.
 
 Test with one computer on Wi-Fi and one on a phone hotspot, with any VPN turned
 off. Verify both characters, a shared puzzle action, and leaving the match. The
 local relay test cannot verify reachability or latency on separate networks.
 
-## Scope
+## Room lifecycle
 
 Room codes are single-use invitations and expire after ten minutes before a
 join. The match ends if either player leaves. ENet traffic is unencrypted and

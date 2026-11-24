@@ -1,12 +1,9 @@
 # Networking (Henry)
 
-Two players on two computers on the same local network play one co-op level. The player who hosts runs the
-game and controls **fire** (slot 0); the player who joins controls **water** (slot 1). Design decisions and the
-reasons behind them are in [DECISIONS.md](DECISIONS.md), ADRs NET-1 to NET-5.
-
-**Status:** connection, protocol, host/client sync of the playable game (players, levers, plates, doors, acid
-enemies, campaign level), disconnect detection, the lobby in the playable game and a two-process demo work and
-are tested. See [Playing online](#playing-online-in-the-game) for how the lobby works and how it is wired.
+Multiplayer runs the three-level campaign using direct UDP connections or a shared
+[room relay](ROOM_RELAY.md). The host runs the simulation and controls **Fire**
+(slot 0). The joiner sends input, receives snapshots, and controls **Water**
+(slot 1). See [design records](DECISIONS.md) for the original proposals.
 
 ## The pieces
 
@@ -19,8 +16,7 @@ are tested. See [Playing online](#playing-online-in-the-game) for how the lobby 
 | `OnlinePlay` (lobby + game loop helper), `DemoNetLevel` | `apps/ui_prototype/net_play.hpp` | The playable game (Rohan) |
 | `DemoLevel::apply_network_state()` | `apps/ui_prototype/demo_level.hpp` | Joiner's copy of the level |
 
-ENet v1.3.18 is downloaded by CMake on the first configure, so that first configure needs internet. Nothing
-outside `engine/src/enet_session.cpp` includes ENet.
+ENet v1.3.18 is downloaded by CMake on the first configure, so that first configure needs internet. Direct sessions and the relay use the same ENet dependency.
 
 ## Playing online in the game
 
@@ -30,7 +26,9 @@ outside `engine/src/enet_session.cpp` includes ENet.
    clicks **JOIN SESSION**.
 4. When "Player 2 (water): Connected" appears, the host clicks **START GAME**. Both start Level 1.
 
-The host plays fire and the joiner plays water; on each computer both key sets (A/D/W and arrows) steer that
+For room-code play, both builds must point to the same [room relay](ROOM_RELAY.md).
+
+The host plays Fire and the joiner plays Water; on each computer both key sets (A/D/W and arrows) steer that
 player's character, and E pulls a lever. Esc pauses both players. RETRY works from either side; NEXT LEVEL and
 REPLAY CAMPAIGN are the host's, and the joiner follows. If the connection drops, both return to the main menu
 with the reason at the bottom of the screen. Switching windows does not pause online play.
@@ -83,7 +81,7 @@ cmake --build build-ui --config Debug --parallel
 ctest --test-dir build-ui -C Debug --output-on-failure
 ```
 
-On macOS the existing `apps/ui_prototype/README.md` command with Homebrew SDL3 works too.
+See [build setup](SETUP.md#graphical-game) for an installed SDL3 build.
 
 ## Session API (low level)
 
@@ -165,10 +163,10 @@ Played by hand in the real game (Windows, two windows on one computer, 127.0.0.1
 lobby, Start Game, water moves in both windows, Esc in either window pauses both, closing the joiner sends the
 host to the menu with "Connection lost".
 
-**Still to do:** the same run on two computers over a phone hotspot or ethernet, before the presentation.
+The `ui_room_relay` suite also covers joining by code, independent player input, third-player rejection, disconnect, and retry via a local UDP relay.
 
 ## Limits
 
-- Exactly two players, LAN only: no internet play, NAT traversal, matchmaking or accounts.
+- Exactly two players per session. Cross-network room codes require a reachable relay.
 - No client-side prediction: on a LAN the joiner's own input takes a few milliseconds to show.
 - No interpolation: snapshots arrive every frame, which looked smooth in testing.

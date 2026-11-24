@@ -1,6 +1,6 @@
 # Resource loading foundation — Arvin
 
-## What now works
+## File resource cache
 
 `FileResourceManager` loads binary file data from an existing asset root and reuses a cached, immutable `FileResource` for repeated requests. It composes the existing generic `ResourceCache`; it does not replace SDL texture/audio loaders or parse JSON/Tiled data.
 
@@ -30,18 +30,15 @@ The asset root is resolved at construction, so later working-directory changes d
 - The manager and cache are single-threaded. Path checks assume trusted, stable project assets; they are not a security sandbox against concurrent filesystem changes.
 - The caller decides whether to stop startup or use a fallback. The loader does not choose game-specific fallback behavior or silently log-and-ignore errors.
 
-## Ownership and collaborators
+## Ownership and SDL integration
 
-The manager owns cached handles; consumers share immutable handles. Destroying an entity or the manager does not invalidate a handle held elsewhere. Clearing cached bytes is not a substitute for proper SDL teardown: decoded textures/audio need their own typed cache and matching deleters.
+The SDL app loads the font atlas and WAV files through `FileResourceManager`.
+The cache owns the source bytes. The app owns the decoded font texture and
+SDL audio streams. The renderer also uses the generic typed cache for its
+textures, releasing them before the renderer shuts down.
 
-Coordinate with Aryaman for textures and renderer lifetime, Rohan for audio, and Gunveer for file/JSON utilities. Keep level interpretation with Gunveer and gameplay rules with Blake. No ECS interfaces were changed.
-
-## Tests and next steps
+## Tests
 
 The `resource_files` suite uses isolated temporary file fixtures: multi-chunk binary data, empty files, normalized paths, missing-file retry, invalid roots/keys, directory rejection, cache refresh and handles surviving clear/manager destruction. Symlink checks run where the OS permits their creation and print a skip otherwise. Temporary fixture directories are removed by RAII.
 
 The infrastructure suite now also tests exception retry and a custom deleter invoked exactly once after final release. These tests model resource ownership without claiming actual SDL resource integration.
-
-On November 5, 2026, all twelve CTest suites passed in both Debug and Release using CMake 4.4.4 and Apple Clang 15 / C++20. The infrastructure and game demos ran successfully in Debug. Windows/Linux and actual SDL loaders remain unverified. See [Arvin's implementation guide](ARVIN_INFRASTRUCTURE.md) for configuration and logging integration.
-
-RAD mapping: FR-26 (foundation for assets), NFR-04 (cache/lifetime), NFR-05 (errors), NFR-12 (tests). Full FR-26 completion still requires real texture/audio adapters. Engine JSON configuration and severity-filtered logging are now implemented; game/level schemas and SDL adapters remain separate integration work.

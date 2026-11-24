@@ -42,7 +42,7 @@ Losing a target starts a timed search toward its last visible position. The agen
 
 Empty patrol routes stand still. Multiple coincident/reached points are skipped with a bounded loop. reset clears state, target memory, timers and patrol progress.
 
-AiConfig permits different enemy/NPC types through tuning. For example, a guard can use short detection and slow movement while a pursuer uses longer detection and faster movement. Set engage_targets=false for a peaceful patrol. The team should choose names and gameplay values.
+AiConfig permits different enemy/NPC types through tuning. For example, a guard can use short detection and slow movement while a pursuer uses longer detection and faster movement. Set engage_targets=false for a peaceful patrol.
 
 ## Navigation contract
 
@@ -54,29 +54,4 @@ Grid cells and world pixels are separate types. Level Tools must define tile dim
 
 The grid models a point agent moving on a flat plane. Collision clearance requires marking cells according to agent size. Platform navigation needs traversable edges describing support surfaces, jumps and drops. A* runs synchronously with memory proportional to the grid; use bounded map sizes and avoid replanning every frame for every NPC.
 
-## Proposed integration sequence
-
-1. Level Tools supplies obstacle data and coordinate mapping.
-2. Gameplay reads an NPC position and eligible target snapshots from World.
-3. Physics or grid sight checks set target visibility.
-4. AiController::update selects a state, destination and optional attack request.
-5. Navigation plans a route to the destination and WaypointFollower chooses the next point.
-6. Movement sets velocity, applies physics/collision and writes the actual resulting position.
-7. Gameplay consumes attack requests, validates combat rules and reports damage events next tick.
-
-The existing cooperative game still uses its human player controls. The new AI demo and tests demonstrate the reusable module separately.
-
-## Coordination and remaining work
-
-- Blake reviews observation/decision semantics, target eligibility, attack handling and whether NPCs belong in the cooperative game.
-- Sydney reviews storing controllers/followers as World components and the eventual NPC update iteration.
-- D'Artagnan reviews collision clearance, ray queries, movement and platform/jump navigation.
-- Gunveer reviews level grids, tile origin/size, dynamic obstacles and serialized patrol/configuration data.
-- A behaviour tree is a possible later extension if concrete behaviours outgrow this state machine.
-- Graphics, animations and a live NPC room demonstration need the relevant runtime adapters.
-
-Tests cover original patrol compatibility, A* optimality across 256 obstacle layouts, unreachable/invalid endpoints, line-of-sight corners and symmetry, target selection, cooldowns, search/reacquisition, damage stun, reset, malformed inputs and an ECS/physics route-following scenario.
-
-## Team workflow
-
-Create or link a real Jira issue, agree estimates, and use its real key for the feature branch before publishing. Ask the owner and consumers to review the proposed API. Record actual test results and implementation understanding in the diary. Jira activity, teammate approval and a PR are pending.
+The [SDL campaign](../../apps/ui_prototype/README.md#acid-enemies) uses the AI for acid-slime patrol and pursuit.

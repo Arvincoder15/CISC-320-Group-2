@@ -1,61 +1,26 @@
-# Local setup
+# Build setup
 
-## Prerequisites
+Use Git, CMake 3.20 or newer, and a C++20 toolchain. On Windows, Visual Studio 2022 with the Desktop development with C++ workload provides a suitable compiler. On macOS, install the Xcode Command Line Tools. On Linux, install GCC or Clang and the development packages needed to build SDL with your display and audio backends. The [rendering workflow](../.github/workflows/rendering.yml) lists the Linux packages used in CI.
 
-- Git and CMake 3.20 or newer.
-- A C++20-capable compiler and its platform SDK/build tools. Exact minimum compiler versions are pending team verification.
-- macOS: Apple Command Line Tools (Apple Clang) and CMake.
-- Windows: Visual Studio C++ desktop build tools, a Windows SDK and CMake; use a developer terminal.
-- Linux: GCC or Clang, development headers, Make (or Ninja) and CMake.
+## Graphical game
 
-Check `cmake --version` and your compiler (`clang++ --version`, `g++ --version`, or `cl`). Install missing tools using your platform's normal tooling. Clone the shared repository and run the following from its root.
-
-## Configure, build, test
+The [main README](../README.md#build-and-run) gives the standard commands. For an installed SDL 3.2 or newer, use `-DGROUP2_FETCH_SDL=OFF` and provide its prefix if CMake cannot find it. For example, with SDL3 installed through Homebrew:
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON
+cmake -S apps/ui_prototype -B build-ui -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DGROUP2_FETCH_SDL=OFF -DCMAKE_PREFIX_PATH="$(brew --prefix sdl3)"
+cmake --build build-ui --config Debug --parallel
+```
+
+On Windows, a single-configuration generator such as Ninja places `ui_prototype.exe` directly in `build-ui`. For a single-configuration Release build, set `-DCMAKE_BUILD_TYPE=Release` at configure time. With Visual Studio, choose `--config Release` at build time and use the `Release` output directory.
+
+## Headless engine and demos
+
+From the repository root:
+
+```sh
+cmake -S . -B build -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --config Debug --parallel
 ctest --test-dir build -C Debug --output-on-failure
 ```
 
-On macOS/Linux with a single-configuration generator:
-
-```sh
-./build/engine_demo
-```
-
-In Windows PowerShell with the Visual Studio generator:
-
-```powershell
-.\build\Debug\engine_demo.exe
-```
-
-Success means twelve passing CTest suites and a demo summary with 120 ticks, two players, two rendered commands and two cached resources. There is no window yet. Each owner's handoff shows how to run only their suite.
-
-For a separate optimized build:
-
-```sh
-cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
-cmake --build build-release --config Release --parallel
-ctest --test-dir build-release -C Release --output-on-failure
-```
-
-CMake ignores `CMAKE_BUILD_TYPE` for multi-configuration generators such as Visual Studio; `--config` and `-C` choose the configuration there. Use a new build directory when changing compilers or generators.
-
-## Adding a source or test
-
-Add new `.cpp` files to the owning target in `CMakeLists.txt` with `target_sources`. Public headers belong under the owning include directory. Keep engine targets independent of the cooperative game. Register additional test executables with `add_test`; extend the corresponding owner suite for related small cases. Do not use C `assert()` as the test runner because Release builds can disable it.
-
-`BUILD_TESTING=OFF` builds the demo without tests. The small runner in `tests/test_support.hpp` is temporary. Once the team chooses GoogleTest or Catch2, Arvin can migrate it while retaining the behavioral cases.
-
-## Introducing the intended stack
-
-Dependency versions and acquisition strategy are deliberately unresolved. By default the only automatic fetch is ENet v1.3.18 for networking (SDL3 is fetched only with `GROUP2_FETCH_SDL=ON`). CMake `FetchContent` downloads it on the first configure, so that first configure needs internet (see [NETWORKING.md](NETWORKING.md)). For each dependency: record a reviewed version/license, choose installed packages or a pinned fetch method, add its target to the owning module, then verify Windows/macOS/Linux CI.
-
-- **SDL3:** Aryaman starts the renderer/window backend with Rohan agreeing who polls events. Arvin supplies resource loader adapters and shutdown tests.
-- **JSON:** Arvin's branch vendors nlohmann/json 3.12.0 for engine settings (private include, MIT license). Team review remains pending. Gunveer owns level schemas/import; Henry owns protocol serialization.
-- **Dear ImGui:** Gunveer integrates tools using Aryaman's renderer and Rohan's event dispatch.
-- **Tiled:** Gunveer documents the supported exported format/subset; unsupported maps fail clearly.
-- **GoogleTest/Catch2:** team choice, implemented by Arvin. CTest remains the top-level command.
-
-Official build references: [CMake compile features](https://cmake.org/cmake/help/latest/command/target_compile_features.html) and [CTest registration](https://cmake.org/cmake/help/v3.20/command/add_test.html).
+This configuration builds the engine, the command-line demos, the relay, and the core tests. ENet is fetched at initial configuration. See [rendering](RENDERING.md) for SDL-specific targets.

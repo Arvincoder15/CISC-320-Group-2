@@ -1,57 +1,47 @@
-# CISC 320 Group 2 — Multiplayer 2D Game Engine
+# Elemental Co-op
 
-Shared C++ starter for all nine developers. The demonstration is a Fireboy-and-Watergirl-inspired cooperative puzzle platformer with one fire character and one water character. The reusable engine lives in `engine/`; the game lives in `games/elemental_coop/`.
+Elemental Co-op is a two-player puzzle platformer built with the reusable C++20 engine developed by CISC 320 Group 2. Play as Fire and Water, dodge elemental hazards and acid slimes, and work together to open gates and reach the matching exits across three levels.
 
-**Current state:** a working headless scaffold, not a graphical game or a multiplayer engine yet. SDL3, Dear ImGui, Tiled import, sockets, menus and audio remain owner tasks. Sydney has added generic ECS component storage; Arvin's branch adds file resources and validated engine JSON configuration. Recording/loopback implementations are explicitly test doubles.
+## Build and run
 
-## Start here
-
-1. [Build and run](docs/SETUP.md).
-2. [Find your member handoff](docs/TEAM.md) — files, first tasks, tests and collaborators for every member.
-3. Read [architecture and interface contracts](docs/ARCHITECTURE.md) and [decisions needing review](docs/DECISIONS.md).
-4. Copy your proposed tasks from the [Jira backlog](docs/JIRA_BACKLOG.md), estimate them together, then begin implementation.
-5. Use [CONTRIBUTING](CONTRIBUTING.md), the [shared AI knowledge base](docs/AI_KNOWLEDGE_BASE.md), and [Confluence templates](docs/CONFLUENCE.md).
-
-## Quick start
-
-For the optional SDL3 rendering backend and animated visual demo, see
-[Rendering setup](docs/RENDERING.md). It adds textures, sprites, tilemaps, camera
-controls, layers and bitmap text while preserving the headless build below.
-
-Requires CMake 3.20+ and a compiler with C++20 support. No third-party library download is required for the starter.
+Install Git, CMake 3.20 or newer, and a C++20 compiler. Run these commands from the repository root. The first configuration downloads SDL3 and ENet.
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build --config Debug --parallel
-ctest --test-dir build -C Debug --output-on-failure
+cmake -S apps/ui_prototype -B build-ui -DGROUP2_FETCH_SDL=ON -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-ui --config Debug --parallel
 ```
 
-Run `./build/engine_demo` on macOS/Linux, or `.\build\Debug\engine_demo.exe` with Visual Studio on Windows. It simulates 120 ticks and prints a summary; it does not open a window.
+- **macOS / Linux** — `./build-ui/ui_prototype`
+- **Windows with Visual Studio** — `.\build-ui\Debug\ui_prototype.exe`
 
-C++20 is a provisional bootstrap choice. The supplied team notes record C++26; the team must confirm its final standard and compiler matrix. The temporary CTest checks do not select GoogleTest or Catch2.
+Keep the generated `assets` and `rendering-assets` directories beside the executable. See [build setup](docs/SETUP.md) for an installed SDL3 build and the headless engine targets.
 
-## Cooperative game scope
+## Play
 
-The working module name is `elemental_coop`; the final game title is undecided. Two human players solve a room together using independent movement/jump controls, different elemental hazards, pressure plates/doors and matching exits. Local co-op is the first integration milestone; networked two-player play remains Henry's assigned deliverable.
+Select **Local Play** for two players on one keyboard.
 
-Implemented starter behavior: two characters, walking, grounded jumps on a temporary flat floor, elemental hazard rules, shared loss/restart and both-player exit completion. The demo uses scripted input and manually supplied contacts. Platforms, collision-trigger adapters, switches/doors, live keyboard controls and sockets remain work to build.
+| Action | Key |
+| --- | --- |
+| Move and jump as Fire | A / D and W |
+| Move and jump as Water | Left / Right and Up |
+| Use a nearby lever | E |
+| Pause or resume | Esc |
+| Toggle background music | M or the music icon |
 
-See [game design and proposed controls](docs/GAME_DESIGN.md) and [game module guide](games/elemental_coop/README.md).
+For two computers on the same LAN, open **Multiplayer** on both. One player selects **Host Session** and controls Fire. The other enters the host's LAN IP and selects **Join Session** to control Water. The host selects **Start Game** once both players are connected. With two windows on one computer, use `127.0.0.1`.
 
-## Layout
+For players on different networks, use **Create Room** and **Join Room** with both builds configured for the same reachable UDP relay. See [room setup and deployment](docs/ROOM_RELAY.md).
 
-```text
-engine/include/engine/  Public reusable subsystem contracts
-engine/src/            Eight engine subsystem implementations
-games/elemental_coop/  Blake's game-specific implementation (ninth ownership area)
-apps/                  Executable composition and headless demo
-tests/                Nine owner suites plus integration tests
-assets/               Example configuration and future licensed assets
-docs/members/         Individual handoffs for all nine members
-docs/templates/       Jira, diary, RAD, SDD, meeting and decision templates
-.github/               Proposed build CI and pull request template
+## Test
+
+```sh
+ctest --test-dir build-ui -C Debug --output-on-failure
 ```
 
-See [milestones](docs/ROADMAP.md) for a proposed integration sequence. Course dates and requirements in these documents come from the supplied conversation notes and need verification against the course site.
+See [testing](docs/TESTING.md) for the automated coverage and manual checks.
 
-Arvin's infrastructure implementation: [usage, ownership, configuration, logging and tests](docs/ARVIN_INFRASTRUCTURE.md). Run `./build/infrastructure_demo assets` after building to exercise it without graphics.
+## Project guide
+
+- [Architecture](docs/ARCHITECTURE.md) and [game rules](docs/GAME_DESIGN.md)
+- [SDL application, level data, and developer tools](apps/ui_prototype/README.md)
+- [Team responsibilities and subsystem notes](docs/TEAM.md)

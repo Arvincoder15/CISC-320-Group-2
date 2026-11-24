@@ -1,19 +1,13 @@
-# Team ownership and starting points
+# Team responsibilities
 
-Primary/secondary roles are from the supplied team notes. Starter interfaces and task estimates are proposals.
-
-| Member | Primary responsibility | Secondary role | Handoff |
+| Member | Primary responsibility | Secondary role | Subsystem notes |
 |---|---|---|---|
-| Sydney | Engine Architecture / ECS | Repository Design/Maintenance | [Start here](members/sydney.md) |
-| Aryaman | Rendering | Archivist | [Start here](members/aryaman.md) |
-| D'Artagnan | Physics & Collision | Technical Writer | [Start here](members/dartagnan.md) |
-| Henry | Networking | Repository Design/Maintenance | [Start here](members/henry.md) |
-| Rocco | Game AI | Team Manager | [Start here](members/rocco.md) |
-| Gunveer | Development Tools | Software Developer/Architect | [Start here](members/gunveer.md) |
-| Blake | Gameplay Systems | Software Developer/Architect | [Start here](members/blake.md) |
-| Rohan | User Interaction & UI | Artist | [Start here](members/rohan.md) |
-| Arvin | Engine Infrastructure | Software Developer/Architect | [Start here](members/arvin.md) |
-
-Each owner implements and tests their subsystem. Arvin provides the test infrastructure; he does not own everyone’s tests. Sydney and Henry maintain repository settings.
-
-Current game: a cooperative elemental puzzle platformer. Each handoff and the Jira draft use that scope; see [game design](GAME_DESIGN.md) for implemented versus proposed behavior.
+| Sydney | Engine Architecture / ECS | Repository Design/Maintenance | [Implementation](members/sydney.md) |
+| Aryaman | Rendering | Archivist | [Implementation](members/aryaman.md) |
+| D'Artagnan | Physics & Collision | Technical Writer | [Implementation](members/dartagnan.md) |
+| Henry | Networking | Repository Design/Maintenance | [Implementation](members/henry.md) |
+| Rocco | Game AI | Team Manager | [Implementation](members/rocco.md) |
+| Gunveer | Development Tools | Software Developer/Architect | [Implementation](members/gunveer.md) |
+| Blake | Gameplay Systems | Software Developer/Architect | [Implementation](members/blake.md) |
+| Rohan | User Interaction & UI | Artist | [Implementation](members/rohan.md) |
+| Arvin | Engine Infrastructure | Software Developer/Architect | [Implementation](members/arvin.md) |

@@ -1,6 +1,6 @@
 # Arvin — infrastructure implementation guide
 
-This branch provides reusable file resources, cache ownership, logging and validated engine configuration. It is a first implementation deliverable, not completion of every infrastructure stretch goal.
+The infrastructure subsystem provides file resources, shared cache ownership, logging, and validated engine settings.
 
 ## How the parts connect
 
@@ -60,7 +60,7 @@ try {
 }
 ```
 
-Each `load_engine_settings` call reads fresh bytes. `parse_engine_settings` accepts JSON text directly for unit tests or other file providers. File failures throw `ResourceError`; JSON/schema failures throw `ConfigurationError` with source/field context. The module does not change an SDL window/audio device. The settings persistence branch adds validated file saving; see [Settings persistence](SETTINGS_PERSISTENCE.md) for its API and limitations.
+Each `load_engine_settings` call reads fresh bytes. `parse_engine_settings` accepts JSON text directly for unit tests or other file providers. File failures throw `ResourceError`; JSON/schema failures throw `ConfigurationError` with source/field context. The module does not change an SDL window/audio device. The settings module also provides validated file saving; see [Settings persistence](SETTINGS_PERSISTENCE.md) for its API and limitations.
 
 The parser is pinned nlohmann/json 3.12.0, included under `third_party/nlohmann_json` with its MIT license and source hashes. Its include directory is private to the infrastructure target; public engine interfaces do not expose JSON-library types. This dependency choice is recorded for team review; no configure-time download is required.
 
@@ -91,14 +91,4 @@ With Visual Studio, run `build/Debug/infrastructure_demo.exe assets` instead. Th
 
 Tests cover multi-chunk binary files and zero bytes, normalized paths, missing-file retry, invalid roots, cleanup after final release, loader exceptions, severity filtering, defaults, invalid JSON/types/ranges, unchanged active settings on failed reload and fresh successful reload. Symlink checks explicitly report skips on platforms that cannot create them.
 
-Verification on November 5, 2026: Apple Clang 15.0.0 / C++20, CMake 4.4.4, all 12 CTest suites passed in both Debug and Release. Both demos ran successfully in Debug. CMake was installed temporarily at `/private/tmp/group2-cmake-tools/cmake/data/bin`; it is not on the permanent PATH. Windows/Linux builds have not been run in this session.
-
-## Team integration still required
-
-- Aryaman + Arvin: decode texture data, choose custom SDL deleters, and release texture handles before their renderer is destroyed.
-- Rohan + Arvin: audio loaders and applying/persisting settings through the UI.
-- Gunveer + Arvin: use shared file loading and the chosen JSON library while keeping level schemas/import logic in tools.
-- Sydney + Arvin: define asset references on components; deleting one entity must not invalidate another entity's shared resource.
-- Team: finalize C++ standard and GoogleTest/Catch2 choice. Existing CTest runner remains functional; no framework migration is claimed.
-
-Resource/file services remain main-thread-only. Advanced profiling, background loading, settings-screen integration and real SDL resource integration are subsequent tasks. The current game continues using its existing settings until its owner integrates these services.
+See [resource management](RESOURCE_MANAGEMENT.md) and [settings persistence](SETTINGS_PERSISTENCE.md) for their use in the SDL game.
